@@ -140,6 +140,7 @@ class Visitor extends GJDepthFirst<LinkedList<String>, Void>{
         return null;
     }
 
+//------------var declarations------------
     /**
     * f0 -> Type()
     * f1 -> Identifier()
@@ -159,7 +160,7 @@ class Visitor extends GJDepthFirst<LinkedList<String>, Void>{
         ret.add(n.f0.toString());
         return ret;
     }
-
+//------------getting types------------
    /**
     * f0 -> ArrayType()
     *       | BooleanType()
@@ -213,5 +214,262 @@ class Visitor extends GJDepthFirst<LinkedList<String>, Void>{
         ret.add("int");
         return ret;
     }
+//------------expressions return their type------------
+   /**
+    * f0 -> AndExpression()
+    *       | CompareExpression()
+    *       | PlusExpression()
+    *       | MinusExpression()
+    *       | TimesExpression()
+    *       | ArrayLookup()
+    *       | ArrayLength()
+    *       | MessageSend()
+    *       | Clause()
+    */
+    public LinkedList<String> visit(Expression n, Void argu) throws Exception {
+        return n.f0.accept(this, argu);
+    }
+    private LinkedList<String> bothAreSpecificType(Node node1, Node node2, String wantedType) throws Exception{
+        LinkedList<String> ret = new LinkedList<String>();
+        String type1 = node1.accept(this, null).get(0);
+        String type2 = node2.accept(this, null).get(0);
+        if (type1.equals(type2) && type1.equals(wantedType)) {ret.add(type1); return ret;}
+        else throw new Exception();
+    }
+    /**
+     * f0 -> Clause()
+     * f1 -> "&&"
+     * f2 -> Clause()
+     */
+    public LinkedList<String> visit(AndExpression n, Void argu) throws Exception {
+        return bothAreSpecificType(n.f0, n.f2, "boolean");
+    }
+    /**
+     * f0 -> PrimaryExpression()
+     * f1 -> "<"
+     * f2 -> PrimaryExpression()
+     */
+    public LinkedList<String> visit(CompareExpression n, Void argu) throws Exception {
+        return bothAreSpecificType(n.f0, n.f2, "int");
 
+    }   
+    /**
+     * f0 -> PrimaryExpression()
+     * f1 -> "+"
+     * f2 -> PrimaryExpression()
+     */
+    public LinkedList<String> visit(PlusExpression n, Void argu) throws Exception {
+        return bothAreSpecificType(n.f0, n.f2, "int");
+    }   
+    /**
+     * f0 -> PrimaryExpression()
+     * f1 -> "-"
+     * f2 -> PrimaryExpression()
+     */
+    public LinkedList<String> visit(MinusExpression n, Void argu) throws Exception {
+       return bothAreSpecificType(n.f0, n.f2, "int");
+    }   
+    /**
+     * f0 -> PrimaryExpression()
+     * f1 -> "*"
+     * f2 -> PrimaryExpression()
+     */
+    public LinkedList<String> visit(TimesExpression n, Void argu) throws Exception {
+       return bothAreSpecificType(n.f0, n.f2, "int");
+    }
+    /**
+     * f0 -> PrimaryExpression()
+     * f1 -> "["
+     * f2 -> PrimaryExpression()
+     * f3 -> "]"
+     */
+    public LinkedList<String> visit(ArrayLookup n, Void argu) throws Exception {
+        LinkedList<String> type = new LinkedList<String>();
+        if (!n.f2.accept(this, argu).get(0).equals("int")) { throw new Exception(); }
+        type.add(n.f0.accept(this, argu).get(0));
+        return type;
+    }
+    /**
+     * f0 -> PrimaryExpression()
+     * f1 -> "."
+     * f2 -> "length"
+     */
+    public LinkedList<String> visit(ArrayLength n, Void argu) throws Exception {
+        LinkedList<String> type = new LinkedList<String>();
+        String exp_type = n.f0.accept(this, argu).get(0);
+        if (!exp_type.endsWith("[]")) { throw new Exception(); }
+        type.add(exp_type);
+        return type;
+    }
+    /**
+     * f0 -> PrimaryExpression() ->must be class
+     * f1 -> "."
+     * f2 -> Identifier() ->must be function of class
+     * f3 -> "("
+     * f4 -> ( ExpressionList() )? -> must be correct (methodInfo)
+     * f5 -> ")"
+     */
+    public LinkedList<String> visit(MessageSend n, Void argu) throws Exception {// this won't work until i create the thing that grabs all classes and functions at the start
+        String className = n.f0.accept(this, argu).get(0);
+        // i think i don't have to check if the class exists because if it didn't then we'd already have thrown an exception
+        // if (!classesAndTheirParents.containsKey(className)) {throw new Exception();} 
+        String methodName = n.f2.accept(this, argu).get(0);
+
+        //make sure the method exists in the class (but what about inherited methods? must check those too)
+        MethodInfo methodInfo = methods.get(new ClassAndIdentifier(className, methodName));
+        if (methodInfo == null) {throw new Exception();}
+
+        //make sure the expression list matches the methodInfo
+        LinkedList<String> expressionList = n.f4.accept(this, argu);
+        if (!expressionList.equals(methodInfo.argumentTypes)) {throw new Exception();}
+
+        //return our return type
+        LinkedList<String> returnType = new LinkedList<String>();
+        returnType.add(methodInfo.returnType);
+        return returnType;
+    }   
+    /**
+     * f0 -> Expression()
+     * f1 -> ExpressionTail()
+     */
+    public LinkedList<String> visit(ExpressionList n, Void argu) throws Exception {
+       LinkedList<String> typesOfExpressions = new LinkedList<String>();
+       typesOfExpressions.add(n.f0.accept(this, argu).get(0));
+       typesOfExpressions.add(n.f1.accept(this, argu).get(0));
+       return typesOfExpressions;
+    }
+    /**
+     * f0 -> ( ExpressionTerm() )*
+     */
+    public LinkedList<String> visit(ExpressionTail n, Void argu) throws Exception {
+        LinkedList<String> typesOfExpressions = new LinkedList<String>();
+        for(int i = 0; i < n.f0.size(); i++){
+            typesOfExpressions.add(n.f0.elementAt(i).accept(this, null).get(0));
+        }
+        return typesOfExpressions;
+    }
+    /**
+     * f0 -> ","
+     * f1 -> Expression()
+     */
+    public LinkedList<String> visit(ExpressionTerm n, Void argu) throws Exception {
+       LinkedList<String> type = new LinkedList<String>();
+       type.add(n.f1.accept(this, argu).get(0));
+       return type;
+    }
+    /**
+     * f0 -> NotExpression()
+     *       | PrimaryExpression()
+     */
+    public LinkedList<String> visit(Clause n, Void argu) throws Exception {
+       return n.f0.accept(this, argu); //todo: does thid need anything?
+    }
+    /**
+     * f0 -> IntegerLiteral()
+     *       | TrueLiteral()
+     *       | FalseLiteral()
+     *       | Identifier() -> todo: we aren't returning a type with this so things that rely on Clause to return a type break with this.
+     *       | ThisExpression()
+     *       | ArrayAllocationExpression()
+     *       | AllocationExpression()
+     *       | BracketExpression()
+     */
+    public LinkedList<String> visit(PrimaryExpression n, Void argu) throws Exception {
+       return n.f0.accept(this, argu);
+    }   
+    /**
+     * f0 -> <INTEGER_LITERAL>
+     */
+    public LinkedList<String> visit(IntegerLiteral n, Void argu) throws Exception {
+        LinkedList<String> type = new LinkedList<String>();
+        type.add("int");
+        return type;
+    }   
+    /**
+     * f0 -> "true"
+     */
+    public LinkedList<String> visit(TrueLiteral n, Void argu) throws Exception {
+        LinkedList<String> type = new LinkedList<String>();
+        type.add("boolean");
+        return type; //extract to createListWithOneElement ?
+    }   
+    /**
+     * f0 -> "false"
+     */
+    public LinkedList<String> visit(FalseLiteral n, Void argu) throws Exception {
+        LinkedList<String> type = new LinkedList<String>();
+        type.add("boolean");
+        return type;
+    }   
+    /**
+     * f0 -> "this"
+     */
+    public LinkedList<String> visit(ThisExpression n, Void argu) throws Exception {
+        LinkedList<String> type = new LinkedList<String>();
+        type.add(currentClass);
+        return type;
+    }   
+    /**
+     * f0 -> BooleanArrayAllocationExpression()
+     *       | IntegerArrayAllocationExpression()
+     */
+    public LinkedList<String> visit(ArrayAllocationExpression n, Void argu) throws Exception {
+       return n.f0.accept(this, argu);
+    }
+    /**
+     * f0 -> "new"
+     * f1 -> "boolean"
+     * f2 -> "["
+     * f3 -> Expression()
+     * f4 -> "]"
+     */
+    public LinkedList<String> visit(BooleanArrayAllocationExpression n, Void argu) throws Exception {
+        if (!n.f3.accept(this,argu).equals("int")) {throw new Exception();}
+        LinkedList<String> type = new LinkedList<String>();
+        type.add("boolean[]");
+        return type;
+    }   
+    /**
+     * f0 -> "new"
+     * f1 -> "int"
+     * f2 -> "["
+     * f3 -> Expression()
+     * f4 -> "]"
+     */
+    public LinkedList<String> visit(IntegerArrayAllocationExpression n, Void argu) throws Exception {
+        if (!n.f3.accept(this, argu).equals("int")) {throw new Exception();}
+        LinkedList<String> type = new LinkedList<String>();
+        type.add("int[]");
+        return type; // todo: extract to new method with above and below and NotExpression
+    }   
+    /**
+     * f0 -> "new"
+     * f1 -> Identifier()
+     * f2 -> "("
+     * f3 -> ")"
+     */
+    public LinkedList<String> visit(AllocationExpression n, Void argu) throws Exception {
+        if (!n.f3.accept(this, argu).equals("int")) {throw new Exception();}
+        LinkedList<String> type = new LinkedList<String>();
+        type.add("boolean[]");
+        return type;
+    }   
+    /**
+     * f0 -> "!"
+     * f1 -> Clause()
+     */
+    public LinkedList<String> visit(NotExpression n, Void argu) throws Exception {
+        if(!n.f1.accept(this, argu).equals("boolean")) {throw new Exception();}
+        LinkedList<String> type = new LinkedList<String>();
+        type.add("boolean");
+        return type;
+    }   
+    /**
+     * f0 -> "("
+     * f1 -> Expression()
+     * f2 -> ")"
+     */
+    public LinkedList<String> visit(BracketExpression n, Void argu) throws Exception {
+        return n.f1.accept(this, argu);
+    }
 }

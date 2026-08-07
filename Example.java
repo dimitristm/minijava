@@ -3,9 +3,11 @@ class Example {
         int[] i;
         int n;
         int f;
-        i = 10;
+        int x;
+        // i = 10;
         // boolean x = true;
-        // f = i + n;
+        f = 10 + 10;
+        f = n + x;
         // x = i + n;
     }
 }

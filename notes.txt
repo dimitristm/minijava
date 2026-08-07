@@ -17,6 +17,7 @@ train of thought that led to List<String> for return type
     either return List<String> or give up on calling super.accept because visit functions have side-effects so calling them twice would alter the symbol table
     etc in unpredictable ways.- i decided on list not because it allows me to not write all the visit functions instead of using super.accept, but because it
     lets me concentrate the change of the structures in a few spots instead of having every function be imperative.
+    -after writing a huge list of functions that both didn't need to use imperative nor multiple strings, starting to doubt this one
 
 
 Structures: 
@@ -36,3 +37,13 @@ do i have to make sure that "args" is not used since minijava says they should n
 this will probably be done automatically because i won't put them in the symbol table
 but what if somebody creates a new variable with the name args? (probably nothing because of shadowing)
 
+need to collect class declerations first to make sure that fields and local variables are of a real type
+
+visits for CompareExpression and PlusExpression are the same, extract to one function?
+
+rename ret to describe what is in the string list for each visit function
+
+MethodInfo must have the argumet types in correct order and so must ExpressionList
+
+clause not returning a type when parsing identifier:
+maybe make Identifier return the type of the identifier in index 0 (if the identifier exists, else null) and the name in index 1
