@@ -632,7 +632,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
 }
 
 class DeclarationCollectorVisitor extends StringRepresentationVisitor{
-    private HashMap<ClassAndIdentifier, MethodInfo> methods = new HashMap<ClassAndIdentifier, MethodInfo>()
+    private HashMap<ClassAndIdentifier, MethodInfo> methods = new HashMap<ClassAndIdentifier, MethodInfo>();
     private HashMap<String, String> classesAndTheirParents = new HashMap<String, String>();
     private String currentClass;
     public HashMap<ClassAndIdentifier, MethodInfo> getMethods(){ return this.methods; }
