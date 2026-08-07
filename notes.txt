@@ -43,7 +43,6 @@ todo: collect class declerations first to make sure that fields and local variab
 todo: find some way to make the symboltable print the value (maybe just undo the generics because i won't need them anyway, but hopefully not because i like them)
 todo: make everything in the first visitor return a class with type and ID or null to make things objectively better because right now im basically bypassing the type system
 todo: add the @Override
-todo: support this: "A a = new B();" when B extends A is correct, and the same applies when a method expects a parameter of type A and a B instance is given instead.
 todo: handle things using fields from their parent class
 todo: make methodinfo fields private with get functions
 todo: make stuff more generic by changing LinkedList to List etc wherever possible
@@ -138,3 +137,15 @@ check for uses of TypecheckVisitor, correct the argument
 
 TypeCheckVisitor takes boolean argument, true = parse identifier as a variable and return the type
 kind of weird to use arguments just for this one thing but what other (simple) way is there?
+
+could also use a field as the expectingTypeOfIdentifier var, but that's state which is more complex to get right, looks less hacky though (?)
+expectingTypeOfIdentifier is not really the best name because we may also get type of a literal in PrimaryExpression visitor func
+
+getTypeOfVariable already checks whether the var exists as an exception, handle the exception where the null checks were for better error messages
+apparently can't have boolean as the argument type
+
+
+todo: support this: "A a = new B();" when B extends A is correct, and the same applies when a method expects a parameter of type A and a B instance is given instead.
+-change: bothAreSameType, methodInfo equals but not when checking for overload
+
+lines 530 409
