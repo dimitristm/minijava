@@ -47,6 +47,9 @@ todo: support this: "A a = new B();" when B extends A is correct, and the same a
 todo: handle things using fields from their parent class
 todo: make methodinfo fields private with get functions
 todo: make stuff more generic by changing LinkedList to List etc wherever possible
+todo: make bothAreSpecificType take in strings instead of nodes, catch the exceptions to print better errors, make ArrayLookup visit method use it too
+todo?: make the formalParameterVisitor add the parameters to the symbol table instead of giving the info to the calle?
+todo: checkNodeForTypeAndReturnAnother seems pretty useless now, remove?
 just gonna remove super.visit because it breaks regular functions in acceptable files (exits the scope and makes the functions think that variables aren't declared)
 
 how to get current line number in this tool? it will be usefull for exception messages
@@ -100,6 +103,7 @@ the identifier visitor that the Type visitor must call should return the string 
 must distinguish between Type and Identifier
 solution:
 change identifier to only give the string representation and wherever i  .get(0) use a function instead
+but PrimaryExpression needs Identifier to return the type..
 
 return types (except null and list of one element)
 VarDeclaration -> type, id (can just insert to symboltable in the VarDeclaration visitor instead of having the callee do it, return null)
@@ -108,3 +112,29 @@ ExpressionList returns list of the types of all expressions, make new visitor ->
  -solution: new visitor just has the calle visitor as a field and uses it - done
 
  TypecheckVisitor will only return strings
+
+
+ Identifier: 
+    pass false - get(0) -> type, get the idName and use getTypeOfVariable - pass false
+    pass true  - get(1) -> just remove, idName - pass true
+
+for VarDeclaration i assume that accepting a ( VarDeclaration() )* node will visit all of the children in order, if funky things are happening with the symboltable check this
+maybe TypecheckVisitor should inherit from StringRepVisitor
+
+identifier returns type and wherever we don't want the type, call string rep?
+
+use false:
+adding to the symboltable -> just return the toString
+Type -> identifier -> class name, just return the toString
+use true:
+PrimaryExpression -> identifier -> parsed name of variable, convert to type
+doing static type checking -> identifier -> parsed name of variable, convert to type
+
+cannot directly call a different function in PrimaryExpression because we don't know the type of the child,
+not supposed to use reflection
+
+-communicate to the identifier function that we're interested in the type of what's being parsed via argument? 
+check for uses of TypecheckVisitor, correct the argument
+
+TypeCheckVisitor takes boolean argument, true = parse identifier as a variable and return the type
+kind of weird to use arguments just for this one thing but what other (simple) way is there?

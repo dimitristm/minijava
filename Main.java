@@ -26,7 +26,7 @@ public class Main {
             DeclarationCollectorVisitor declarations = new DeclarationCollectorVisitor();
             root.accept(declarations, null);
             TypecheckVisitor eval = new TypecheckVisitor(declarations.getMethods(), declarations.getClassesAndTheirParents());
-            root.accept(eval, null);
+            root.accept(eval, false);
         }
         catch(ParseException ex){
             System.out.println(ex.getMessage());
@@ -105,7 +105,7 @@ class SymbolTable<K, V>{
     }
 }
 
-class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
+class TypecheckVisitor extends GJDepthFirst<String, boolean>{
     //in SymbolTable<ClassAndIdentifier, String> the string represents the type of the field/variable
     private SymbolTable<ClassAndIdentifier, String> variableSymbolTable = new SymbolTable<ClassAndIdentifier, String>();
     private final HashMap<ClassAndIdentifier, MethodInfo> methods; // why would this be a symbol table? it would always have one layer that is never exited
@@ -138,18 +138,16 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
     * f17 -> "}"
     */
     @Override
-    public LinkedList<String> visit(MainClass n, Void argu) throws Exception {
+    public String visit(MainClass n, boolean expectingTypeOfIdentifier) throws Exception {
 
-        currentClass = n.f1.accept(this, null).get(1);
+        currentClass = n.f1.accept(this, null);
         // classesAndTheirParents.put(currentClass, null); //shouldn't this be a compiler error anyway because classesAndTheirParents is final?
 
         // we don't add main method to the table since it's handled by exception later (?), just immediately start taking its local variables
         variableSymbolTable.enter(); //create first scope where the fields of all classes are
         variableSymbolTable.enter(); //go into the scope of main method
-        for(int i = 0; i < n.f14.size(); i++){ //insert the local variables of main
-            LinkedList<String> typeAndID = n.f14.elementAt(i).accept(this, null);
-            variableSymbolTable.insert(new ClassAndIdentifier(currentClass, typeAndID.get(1)), typeAndID.get(0));
-        }
+        //insert the local variables of main
+        n.f14.accept(this, null);
         // handle statements here
         n.f15.accept(this, null);
         variableSymbolTable.exit(); //exit main method scope
@@ -164,12 +162,11 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
     * f4 -> ( MethodDeclaration() )*
     * f5 -> "}"
     */
-    public LinkedList<String> visit(ClassDeclaration n, Void argu) throws Exception {
-        currentClass = n.f1.accept(this, null).get(1);
-        for(int i = 0; i < n.f3.size(); i++){//insert fields to symbol table
-            LinkedList<String> typeAndID = n.f3.elementAt(i).accept(this, null);
-            variableSymbolTable.insert(new ClassAndIdentifier(currentClass, typeAndID.get(1)), typeAndID.get(0));
-        }
+    public String visit(ClassDeclaration n, boolean expectingTypeOfIdentifier) throws Exception {
+        currentClass = n.f1.accept(this, null);
+        for(int i = 0; i < n.f3.size(); i++){
+        //insert fields to symbol table
+        n.f3.accept(this, null);
         //handle methods
         n.f4.accept(this, null);
         return null;
@@ -185,14 +182,12 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
     * f6 -> ( MethodDeclaration() )*
     * f7 -> "}"
     */
-   public LinkedList<String> visit(ClassExtendsDeclaration n, Void argu) throws Exception {
-        currentClass = n.f1.accept(this, null).get(1);
-        for(int i = 0; i < n.f5.size(); i++){//insert fields to symbol table
-            LinkedList<String> typeAndID = n.f5.elementAt(i).accept(this, null);
-            variableSymbolTable.insert(new ClassAndIdentifier(currentClass, typeAndID.get(1)), typeAndID.get(0));
-        }
+   public String visit(ClassExtendsDeclaration n, boolean expectingTypeOfIdentifier) throws Exception {
+        currentClass = n.f1.accept(this, null);
+        //insert fields to symbol table
+        n.f5.accept(this, argu);
         //handle methods
-        n.f6.accept(this, null);
+        n.f6.accept(this, argu);
         return null;
    }
 
@@ -211,25 +206,22 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
     * f11 -> ";"
     * f12 -> "}"
     */
-    public LinkedList<String> visit(MethodDeclaration n, Void argu) throws Exception {
+    public String visit(MethodDeclaration n, boolean expectingTypeOfIdentifier) throws Exception {
         variableSymbolTable.enter();
-        //add the parameters and the varDeclarations to the symboltable -- todo: what is f4 if we have no parameters and does it break this?
+        //add the parameters and the varDeclarations to the symboltable
         //parameters:
         if (n.f4.present()){
-        FormalParamListData params = n.f4.accept(new FormalParameterVisitor(), null);
+            FormalParamListData params = n.f4.accept(new FormalParameterVisitor(), null); // todo?: make the formalParameterVisitor add them to the symbol table?
             for (int i = 0; i < params.size(); i++){
                 variableSymbolTable.insert(new ClassAndIdentifier(currentClass, params.argumentIDs.get(i)), params.argumentTypes.get(i));
             }
         }
         //local vars:
-        for(int i = 0; i < n.f7.size(); i++){//insert fields to symbol table
-            LinkedList<String> typeAndID = n.f7.elementAt(i).accept(this, null);
-            System.out.println("Inserting to the vartable: (" + currentClass + ", " + typeAndID.get(1) + ") -> " + typeAndID.get(0));
-            variableSymbolTable.insert(new ClassAndIdentifier(currentClass, typeAndID.get(1)), typeAndID.get(0));
-        }
+        n.f7.accept(this, argu);
+        //handle statements:
         n.f8.accept(this, argu);
         //make sure the return type is correct
-        if (n.f1.accept(this, null).get(0) != n.f10.accept(this, null).get(0)) { throw new Exception("the return type of the function " + n.f2.accept(this, null).get(1) + " is wrong.");}
+        if (n.f1.accept(this, null) != n.f10.accept(this, null)) { throw new Exception("the return type of the function " + n.f2.accept(this, null) + " is wrong.");}
         variableSymbolTable.exit();
         return null;
     }
@@ -240,34 +232,28 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
     * f1 -> Identifier()
     * f2 -> ";"
     */
-    // index 0 = type, index 1 = identifier name
-    public LinkedList<String> visit(VarDeclaration n, Void argu) throws Exception {
-        LinkedList<String> typeAndID = new LinkedList<String>();
-        typeAndID.add(n.f0.accept(this, null).get(0));
-        typeAndID.add(n.f1.accept(this, null).get(1));
-        return typeAndID;
+    // add to the symboltable
+    public String visit(VarDeclaration n, boolean expectingTypeOfIdentifier) throws Exception {
+        variableSymbolTable.insert(new ClassAndIdentifier(currentClass, n.f1.accept(this,null)), n.f0.accept(this, null));
+        return null;
     }
 
-    // index 0 = type of identifier if it already exists, null if it doesn't
-    // index 1 = name of the identifier
-    public LinkedList<String> visit(Identifier n, Void argu) throws Exception {
-        LinkedList<String> typeIfItExistsAndID = new LinkedList<String>();
-        String IDname = n.f0.toString();
+    private String getTypeOfVariable(String varName) throws Exception{
         String type = null;
 
         //look in the current class and the parent classes for the type of this identifier, if it's not found
         //then it has not been declared in this scope so type = null
         String currentClassToCheck = currentClass;
         while (currentClassToCheck != null){
-            type = variableSymbolTable.lookup(new ClassAndIdentifier(currentClassToCheck, IDname));
-            if (type != null) break;
+            type = variableSymbolTable.lookup(new ClassAndIdentifier(currentClassToCheck, varName));
+            if (type != null) {System.out.println("varName and type: " + varName + " " + type); return type;}
             currentClassToCheck = classesAndTheirParents.get(currentClassToCheck);
         }
-        System.out.println("IDname and type: " + IDname + " " + type);
-
-        typeIfItExistsAndID.add(type);
-        typeIfItExistsAndID.add(IDname);
-        return typeIfItExistsAndID;
+        throw new Exception("The variable " + varName + " has not been declared yet");
+    }
+    //string rep
+    public String visit(Identifier n, boolean expectingTypeOfIdentifier) throws Exception {
+        return n.f0.toString();
     }
    //------------getting types------------
    /**
@@ -276,7 +262,7 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
     *       | IntegerType()
     *       | Identifier()
     */
-    public LinkedList<String> visit(Type n, Void argu) throws Exception {
+    public String visit(Type n, boolean expectingTypeOfIdentifier) throws Exception {
         return n.f0.accept(this, argu);
     }
 
@@ -284,7 +270,7 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
      * f0 -> BooleanArrayType()
      *       | IntegerArrayType()
      */
-    public LinkedList<String> visit(ArrayType n, Void argu) throws Exception {
+    public String visit(ArrayType n, boolean expectingTypeOfIdentifier) throws Exception {
        return n.f0.accept(this, argu);
     }
     /**
@@ -292,36 +278,28 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
      * f1 -> "["
      * f2 -> "]"
      */
-    public LinkedList<String> visit(BooleanArrayType n, Void argu) throws Exception {
-        LinkedList<String> ret= new LinkedList<String>();
-        ret.add("boolean[]");
-        return ret;
+    public String visit(BooleanArrayType n, boolean expectingTypeOfIdentifier) throws Exception {
+        return "boolean[]";
     }
     /**
      * f0 -> "int"
      * f1 -> "["
      * f2 -> "]"
      */
-    public LinkedList<String> visit(IntegerArrayType n, Void argu) throws Exception {
-        LinkedList<String> ret= new LinkedList<String>();
-        ret.add("int[]");
-        return ret;
+    public String visit(IntegerArrayType n, boolean expectingTypeOfIdentifier) throws Exception {
+        return "int[]";
     }
     /**
      * f0 -> "boolean"
      */
-    public LinkedList<String> visit(BooleanType n, Void argu) throws Exception {
-        LinkedList<String> ret= new LinkedList<String>();
-        ret.add("boolean");
-        return ret;
+    public String visit(BooleanType n, boolean expectingTypeOfIdentifier) throws Exception {
+        return "boolean";
     }
     /**
      * f0 -> "int"
      */
-    public LinkedList<String> visit(IntegerType n, Void argu) throws Exception {
-        LinkedList<String> ret= new LinkedList<String>();
-        ret.add("int");
-        return ret;
+    public String visit(IntegerType n, boolean expectingTypeOfIdentifier) throws Exception {
+        return "int";
     }
    //------------expressions return their type------------
    /**
@@ -335,15 +313,14 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
     *       | MessageSend()
     *       | Clause()
     */
-    public LinkedList<String> visit(Expression n, Void argu) throws Exception {
+    public String visit(Expression n, boolean expectingTypeOfIdentifier) throws Exception {
         return n.f0.accept(this, argu);
     }
-    //returns the type of the expressions in a list of one string, or throws an exception if they're not the same
-    private LinkedList<String> bothAreSpecificType(Node node1, Node node2, String wantedType) throws Exception{
-        LinkedList<String> ret = new LinkedList<String>();
-        String type1 = node1.accept(this, null).get(0);
-        String type2 = node2.accept(this, null).get(0);
-        if (type1.equals(type2) && type1.equals(wantedType)) {ret.add(type1); return ret;}
+    //returns the type of the expressions as a string, or throws an exception if they're not the same
+    private String bothAreSpecificType(Node node1, Node node2, String wantedType) throws Exception{
+        String type1 = node1.accept(this, null);
+        String type2 = node2.accept(this, null);
+        if (type1.equals(type2) && type1.equals(wantedType)) {return type1;}
         else throw new Exception("Expected that the variables would be of type " + wantedType + " but they were not.");
     }
     /**
@@ -351,7 +328,7 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
      * f1 -> "&&"
      * f2 -> Clause()
      */
-    public LinkedList<String> visit(AndExpression n, Void argu) throws Exception {
+    public String visit(AndExpression n, boolean expectingTypeOfIdentifier) throws Exception {
         return bothAreSpecificType(n.f0, n.f2, "boolean");
     }
     /**
@@ -359,7 +336,7 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
      * f1 -> "<"
      * f2 -> PrimaryExpression()
      */
-    public LinkedList<String> visit(CompareExpression n, Void argu) throws Exception {
+    public String visit(CompareExpression n, boolean expectingTypeOfIdentifier) throws Exception {
         return bothAreSpecificType(n.f0, n.f2, "int");
 
     }   
@@ -368,7 +345,7 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
      * f1 -> "+"
      * f2 -> PrimaryExpression()
      */
-    public LinkedList<String> visit(PlusExpression n, Void argu) throws Exception {
+    public String visit(PlusExpression n, boolean expectingTypeOfIdentifier) throws Exception {
         return bothAreSpecificType(n.f0, n.f2, "int");
     }   
     /**
@@ -376,7 +353,7 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
      * f1 -> "-"
      * f2 -> PrimaryExpression()
      */
-    public LinkedList<String> visit(MinusExpression n, Void argu) throws Exception {
+    public String visit(MinusExpression n, boolean expectingTypeOfIdentifier) throws Exception {
        return bothAreSpecificType(n.f0, n.f2, "int");
     }   
     /**
@@ -384,7 +361,7 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
      * f1 -> "*"
      * f2 -> PrimaryExpression()
      */
-    public LinkedList<String> visit(TimesExpression n, Void argu) throws Exception {
+    public String visit(TimesExpression n, boolean expectingTypeOfIdentifier) throws Exception {
        return bothAreSpecificType(n.f0, n.f2, "int");
     }
     /**
@@ -393,23 +370,19 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
      * f2 -> PrimaryExpression()
      * f3 -> "]"
      */
-    public LinkedList<String> visit(ArrayLookup n, Void argu) throws Exception {
-        LinkedList<String> type = new LinkedList<String>();
-        if (!n.f2.accept(this, argu).get(0).equals("int")) { throw new Exception("Array lookup needs an int inside the brackets"); }
-        type.add(n.f0.accept(this, argu).get(0));
-        return type;
+    public String visit(ArrayLookup n, boolean expectingTypeOfIdentifier) throws Exception {
+        if (!n.f2.accept(this, argu).equals("int")) { throw new Exception("Array lookup needs an int inside the brackets"); }
+        return n.f0.accept(this, argu);
     }
     /**
      * f0 -> PrimaryExpression()
      * f1 -> "."
      * f2 -> "length"
      */
-    public LinkedList<String> visit(ArrayLength n, Void argu) throws Exception {
-        LinkedList<String> type = new LinkedList<String>();
-        String exp_type = n.f0.accept(this, argu).get(0);
+    public String visit(ArrayLength n, boolean expectingTypeOfIdentifier) throws Exception {
+        String exp_type = n.f0.accept(this, argu);
         if (!exp_type.endsWith("[]")) { throw new Exception("tried to get array length of something that is not an array"); }
-        type.add(exp_type);
-        return type;
+        return "int";
     }
     /**
      * f0 -> PrimaryExpression() ->must be class OR this
@@ -419,11 +392,11 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
      * f4 -> ( ExpressionList() )? -> must be correct (methodInfo)
      * f5 -> ")"
      */
-    public LinkedList<String> visit(MessageSend n, Void argu) throws Exception {
-        String className = n.f0.accept(this, argu).get(0);
+    public String visit(MessageSend n, boolean expectingTypeOfIdentifier) throws Exception {
+        String className = n.f0.accept(this, argu);
         // i think i don't have to check if the class exists because if it didn't then we'd already have thrown an exception
         // if (!classesAndTheirParents.containsKey(className)) {throw new Exception();} 
-        String methodName = n.f2.accept(this, argu).get(1);
+        String methodName = n.f2.accept(this, argu);
         System.out.println(methodName + " = methodname");
 
         //make sure the method exists in the class (but what about inherited methods? must check those too)
@@ -435,16 +408,14 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
         if (!expressionList.equals(methodInfo.argumentTypes)) {throw new Exception("The types of the arguments given to a method do not match its signature");}
 
         //return our return type
-        LinkedList<String> returnType = new LinkedList<String>();
-        returnType.add(methodInfo.returnType);
-        return returnType;
+        return methodInfo.returnType;
     }   
     /**
      * f0 -> NotExpression()
      *       | PrimaryExpression()
      */
-    public LinkedList<String> visit(Clause n, Void argu) throws Exception {
-       return n.f0.accept(this, argu); //todo: does thid need anything?
+    public String visit(Clause n, boolean expectingTypeOfIdentifier) throws Exception {
+       return n.f0.accept(this, argu); //todo: does this need anything?
     }
     /**
      * f0 -> IntegerLiteral()
@@ -456,53 +427,43 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
      *       | AllocationExpression()
      *       | BracketExpression()
      */
-    public LinkedList<String> visit(PrimaryExpression n, Void argu) throws Exception {
+    public String visit(PrimaryExpression n, boolean expectingTypeOfIdentifier) throws Exception {
        return n.f0.accept(this, argu);
     }   
     /**
      * f0 -> <INTEGER_LITERAL>
      */
-    public LinkedList<String> visit(IntegerLiteral n, Void argu) throws Exception {
-        LinkedList<String> type = new LinkedList<String>();
-        type.add("int");
-        return type;
+    public String visit(IntegerLiteral n, boolean expectingTypeOfIdentifier) throws Exception {
+        return "int";
     }   
     /**
      * f0 -> "true"
      */
-    public LinkedList<String> visit(TrueLiteral n, Void argu) throws Exception {
-        LinkedList<String> type = new LinkedList<String>();
-        type.add("boolean");
-        return type; //extract to createListWithOneElement ?
+    public String visit(TrueLiteral n, boolean expectingTypeOfIdentifier) throws Exception {
+        return "boolean";
     }   
     /**
      * f0 -> "false"
      */
-    public LinkedList<String> visit(FalseLiteral n, Void argu) throws Exception {
-        LinkedList<String> type = new LinkedList<String>();
-        type.add("boolean");
-        return type;
+    public String visit(FalseLiteral n, boolean expectingTypeOfIdentifier) throws Exception {
+        return "boolean";
     }   
     /**
      * f0 -> "this"
      */
-    public LinkedList<String> visit(ThisExpression n, Void argu) throws Exception {
-        LinkedList<String> type = new LinkedList<String>();
-        type.add(currentClass);
-        return type;
+    public String visit(ThisExpression n, boolean expectingTypeOfIdentifier) throws Exception {
+        return currentClass;
     }   
     /**
      * f0 -> BooleanArrayAllocationExpression()
      *       | IntegerArrayAllocationExpression()
      */
-    public LinkedList<String> visit(ArrayAllocationExpression n, Void argu) throws Exception {
+    public String visit(ArrayAllocationExpression n, boolean expectingTypeOfIdentifier) throws Exception {
        return n.f0.accept(this, argu);
     }
-    private LinkedList<String> checkNodeForTypeAndReturnAnother (Node node, String typeToCheckFor, String typeToReturn) throws Exception{
+    private String checkNodeForTypeAndReturnAnother (Node node, String typeToCheckFor, String typeToReturn) throws Exception{
         if (!node.accept(this,null).get(0).equals(typeToCheckFor)) {throw new Exception("wrong type, was supposed to be " + typeToCheckFor);}
-        LinkedList<String> type = new LinkedList<String>();
-        type.add(typeToReturn);
-        return type;
+        return typeToReturn;
     }
     /**
      * f0 -> "new"
@@ -511,7 +472,7 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
      * f3 -> Expression()
      * f4 -> "]"
      */
-    public LinkedList<String> visit(BooleanArrayAllocationExpression n, Void argu) throws Exception {
+    public String visit(BooleanArrayAllocationExpression n, boolean expectingTypeOfIdentifier) throws Exception {
         return checkNodeForTypeAndReturnAnother(n.f3, "int", "boolean[]");
     }   
     /**
@@ -521,7 +482,7 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
      * f3 -> Expression()
      * f4 -> "]"
      */
-    public LinkedList<String> visit(IntegerArrayAllocationExpression n, Void argu) throws Exception {
+    public String visit(IntegerArrayAllocationExpression n, boolean expectingTypeOfIdentifier) throws Exception {
         return checkNodeForTypeAndReturnAnother(n.f3, "int", "int[]");
     }   
     /**
@@ -530,20 +491,18 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
      * f2 -> "("
      * f3 -> ")"
      */
-    public LinkedList<String> visit(AllocationExpression n, Void argu) throws Exception {
-        String identifierName = n.f1.accept(new StringRepresentationVisitor(), null);
+    public String visit(AllocationExpression n, boolean expectingTypeOfIdentifier) throws Exception {
+        String identifierName = n.f1.accept(this, null);
         if(!classesAndTheirParents.containsKey(identifierName)){
             throw new Exception("Allocation expression did not contain a declared class, " + identifierName + " is not recognised");
         }
-        LinkedList<String> type = new LinkedList<String>();
-        type.add(identifierName);
-        return type;
+        return identifierName;//in this case, identifierName is a class name, not a func or var so this is right
     }   
     /**
      * f0 -> "!"
      * f1 -> Clause()
      */
-    public LinkedList<String> visit(NotExpression n, Void argu) throws Exception {
+    public String visit(NotExpression n, boolean expectingTypeOfIdentifier) throws Exception {
         return checkNodeForTypeAndReturnAnother(n.f1, "boolean", "boolean");
     }   
     /**
@@ -551,7 +510,7 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
      * f1 -> Expression()
      * f2 -> ")"
      */
-    public LinkedList<String> visit(BracketExpression n, Void argu) throws Exception {
+    public String visit(BracketExpression n, boolean expectingTypeOfIdentifier) throws Exception {
         return n.f1.accept(this, argu);
     }
    //statements
@@ -563,7 +522,7 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
     *       | WhileStatement()
     *       | PrintStatement()
     */
-   public LinkedList<String> visit(Statement n, Void argu) throws Exception {
+   public String visit(Statement n, boolean expectingTypeOfIdentifier) throws Exception {
       return n.f0.accept(this, argu);
    }
 
@@ -572,7 +531,7 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
     * f1 -> ( Statement() )*
     * f2 -> "}"
     */
-   public LinkedList<String> visit(Block n, Void argu) throws Exception {
+   public String visit(Block n, boolean expectingTypeOfIdentifier) throws Exception {
       LinkedList<String> _ret=null;
       n.f0.accept(this, argu);
       n.f1.accept(this, argu);
@@ -580,10 +539,10 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
       return _ret;
    }
 
-    private LinkedList<String> bothAreSameType(Node node1, Node node2) throws Exception{
+    private String bothAreSameType(Node node1, Node node2) throws Exception{
         LinkedList<String> ret = new LinkedList<String>();
-        String type1 = node1.accept(this, null).get(0);
-        String type2 = node2.accept(this, null).get(0);
+        String type1 = node1.accept(this, null).get(0);// Identifier
+        String type2 = node2.accept(this, null).get(0);// Expression
         if (type1 == null || type2 == null) {throw new Exception("could not find type of identifier, probably not declared yet");}
         if (type1.equals(type2)) {ret.add(type1); return ret;}
         else throw new Exception("Expected that two things would be of the same type");
@@ -594,7 +553,7 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
     * f2 -> Expression()
     * f3 -> ";"
     */
-    public LinkedList<String> visit(AssignmentStatement n, Void argu) throws Exception {
+    public LinkedList<String> visit(AssignmentStatement n, boolean expectingTypeOfIdentifier) throws Exception {
          return bothAreSameType(n.f0, n.f2);
     }   
     /**
@@ -606,7 +565,7 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
      * f5 -> Expression()
      * f6 -> ";"
      */
-    public LinkedList<String> visit(ArrayAssignmentStatement n, Void argu) throws Exception {
+    public LinkedList<String> visit(ArrayAssignmentStatement n, boolean expectingTypeOfIdentifier) throws Exception {
         LinkedList<String> returnType = new LinkedList<String>();
         String IDtype = n.f0.accept(this, argu).get(0);
         String rType = n.f5.accept(this, argu).get(0);
@@ -626,7 +585,7 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
      * f5 -> "else"
      * f6 -> Statement()
      */
-    public LinkedList<String> visit(IfStatement n, Void argu) throws Exception {
+    public LinkedList<String> visit(IfStatement n, boolean expectingTypeOfIdentifier) throws Exception {
        if (n.f2.accept(this, argu).get(0) != "boolean") {throw new Exception("if statement must have a boolean type in its parentheses");}
        n.f4.accept(this, argu);
        n.f6.accept(this, argu);
@@ -639,7 +598,7 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
      * f3 -> ")"
      * f4 -> Statement()
      */
-    public LinkedList<String> visit(WhileStatement n, Void argu) throws Exception {
+    public LinkedList<String> visit(WhileStatement n, boolean expectingTypeOfIdentifier) throws Exception {
        if (n.f2.accept(this, argu).get(0) != "boolean") {throw new Exception("while statement must have a boolean type in its parentheses");}
        n.f4.accept(this, argu);
        return null;
@@ -651,7 +610,7 @@ class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
      * f3 -> ")"
      * f4 -> ";"
      */
-    public LinkedList<String> visit(PrintStatement n, Void argu) throws Exception {
+    public LinkedList<String> visit(PrintStatement n, boolean expectingTypeOfIdentifier) throws Exception {
        LinkedList<String> _ret=null;
        n.f0.accept(this, argu);
        n.f1.accept(this, argu);
