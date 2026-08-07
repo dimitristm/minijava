@@ -31,7 +31,7 @@ public class Main {
                     System.err.println("SUCCESS: Program " + args[i] + " passed the semantic check.");
 
                     System.out.println("Offsets:");
-                    OffsetGeneratorVisitor ofvis = new OffsetGeneratorVisitor(declarations.getMethods(), declarations.getClassesAndTheirParents());
+                    OffsetGeneratorVisitor ofvis = new OffsetGeneratorVisitor();
                     root.accept(ofvis, null);
                     ofvis.printOffsets();
 
@@ -849,16 +849,14 @@ class ClassOffsets{
     }
 }
 class OffsetGeneratorVisitor extends StringRepresentationVisitor{
-    OffsetGeneratorVisitor(HashMap<ClassAndIdentifier, MethodInfo> methods, HashMap<String, String> classesAndTheirParents){
-        this.classesAndTheirParents = classesAndTheirParents;
-        this.methods = methods;
-    }
+    // OffsetGeneratorVisitor(HashMap<ClassAndIdentifier, MethodInfo> methods, HashMap<String, String> classesAndTheirParents){
+    //     this.classesAndTheirParents = classesAndTheirParents;
+    //     this.methods = methods;
+    // }
     private LinkedList<ClassOffsets> offsets = new LinkedList<ClassOffsets>();
     private String currentClass;
     private HashMap<String, Integer> storageRequired = new HashMap<String, Integer>();
 
-    private HashMap<String, String> classesAndTheirParents = new HashMap<String, String>(); // merge into one with the above? would it make the algo for checking overloaded functions slower or faster?
-    private HashMap<ClassAndIdentifier, MethodInfo> methods = new HashMap<ClassAndIdentifier, MethodInfo>(); // why would this be a symbol table? it would always have one layer that is never exited
 
     OffsetGeneratorVisitor(){
         storageRequired.put("int", 4);
