@@ -1,0 +1,14 @@
+todo: change main to accept multiple files at once
+according to min 28: easiest solution is to visit each node two times once to get declerations and once to check all references to identifiers
+we don't have many nested scopes, we just have inheritance, field members, function variables (but what about while?)
+how to handle parallel scopes? if i generate the entire symbol table first and then check types it would be more complex(?), generate while checking
+there are no classes defined within classes
+
+
+page type: Map<Pair<ClassName, IdentifierName>, IdentifierInfo>
+
+IdentifierInfo:
+type -> int, intArray, bool, boolArray, func (enum)
+additional (if func) -> return type, list of arguments (to check for incorrect overloading) (put this in its own class, this will be null if not func)
+
+SymbolTable type will have functions enter insert lookup exit as described in slides, will be wrapper around list
