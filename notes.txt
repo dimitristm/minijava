@@ -1,12 +1,6 @@
 todo: change main to accept multiple files at once
 according to min 28: easiest solution is to visit each node two times once to get declerations and once to check all references to identifiers
-we don't have many nested scopes, we just have inheritance, field members, function variables (but what about while?)
 there are no classes defined within classes
-
-
-page type: Map<Pair<ClassName, IdentifierName>, IdentifierInfo>
-
-SymbolTable type will have functions enter insert lookup exit as described in slides, will be wrapper around list
 
 train of thought that led to multiple data structures (beyond just SymbolTable):
     produce some information to make sure the same class cannot be defined twice (put them in a new symbolTable or make CLASS a MinijavaType)
@@ -37,13 +31,15 @@ do i have to make sure that "args" is not used since minijava says they should n
 this will probably be done automatically because i won't put them in the symbol table
 but what if somebody creates a new variable with the name args? (probably nothing because of shadowing)
 
-need to collect class declerations first to make sure that fields and local variables are of a real type
-
-visits for CompareExpression and PlusExpression are the same, extract to one function?
-
-rename ret to describe what is in the string list for each visit function
-
 MethodInfo must have the argumet types in correct order and so must ExpressionList
 
 clause not returning a type when parsing identifier:
 maybe make Identifier return the type of the identifier in index 0 (if the identifier exists, else null) and the name in index 1
+
+todo: rename ret to describe what is in the string list for each visit function
+todo: check for Identifiers declared more than once in same scope
+todo: better error messages
+todo: collect class declerations first to make sure that fields and local variables are of a real type as well as to make sure the functions called exist, i'll do this with a second visitor class
+    and have it give the methods and classesAndTheirParents structures to the first one
+
+just gonna remove super.visit because it breaks regular functions in acceptable files (exits the scope and makes the functions think that variables aren't declared)

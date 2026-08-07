@@ -94,6 +94,7 @@ class SymbolTable<K, V>{
 }
 
 class Visitor extends GJDepthFirst<LinkedList<String>, Void>{
+    //in SymbolTable<ClassAndIdentifier, String> the string represents the type of the field/variable
     private SymbolTable<ClassAndIdentifier, String> variableSymbolTable = new SymbolTable<ClassAndIdentifier, String>();
     private HashMap<ClassAndIdentifier, MethodInfo> methods = new HashMap<ClassAndIdentifier, MethodInfo>(); // why would this be a symbol table? it would always have one layer that is never exited
     private HashMap<String, String> classesAndTheirParents = new HashMap<String, String>(); // merge into one with the above? would it make the algo for checking overloaded functions slower or faster?
@@ -122,7 +123,7 @@ class Visitor extends GJDepthFirst<LinkedList<String>, Void>{
     @Override
     public LinkedList<String> visit(MainClass n, Void argu) throws Exception {
 
-        String mainClassName = n.f1.accept(this, null).get(0);
+        String mainClassName = n.f1.accept(this, null).get(1);
         currentClass = mainClassName;
         classesAndTheirParents.put(mainClassName, null);
 
@@ -130,13 +131,12 @@ class Visitor extends GJDepthFirst<LinkedList<String>, Void>{
         variableSymbolTable.enter();
         for(int i = 0; i < n.f14.size(); i++){
             LinkedList<String> typeAndID = n.f14.elementAt(i).accept(this, null);
-            variableSymbolTable.insert(new ClassAndIdentifier(currentClass, typeAndID.get(0)), typeAndID.get(1));
+            variableSymbolTable.insert(new ClassAndIdentifier(currentClass, typeAndID.get(1)), typeAndID.get(0));
         }
         // handle statements here
-
+        n.f15.accept(this, null);
         variableSymbolTable.exit();
 
-        super.visit(n, argu);
         return null;
     }
 
@@ -150,14 +150,17 @@ class Visitor extends GJDepthFirst<LinkedList<String>, Void>{
     public LinkedList<String> visit(VarDeclaration n, Void argu) throws Exception {
         LinkedList<String> ret = new LinkedList<String>();
         ret.add(n.f0.accept(this, null).get(0));
-        ret.add(n.f1.accept(this, null).get(0));
+        ret.add(n.f1.accept(this, null).get(1));
         return ret;
     }
 
-    // returns just the name of the identifier in index 0
+    // index 0 = type of identifier if it already exists, null if it doesn't
+    // index 1 = name of the identifier
     public LinkedList<String> visit(Identifier n, Void argu) throws Exception {
         LinkedList<String> ret = new LinkedList<String>();
-        ret.add(n.f0.toString());
+        String IDname = n.f0.toString();
+        ret.add(variableSymbolTable.lookup(new ClassAndIdentifier(currentClass, IDname)));
+        ret.add(IDname);
         return ret;
     }
 //------------getting types------------
@@ -368,7 +371,7 @@ class Visitor extends GJDepthFirst<LinkedList<String>, Void>{
      * f0 -> IntegerLiteral()
      *       | TrueLiteral()
      *       | FalseLiteral()
-     *       | Identifier() -> todo: we aren't returning a type with this so things that rely on Clause to return a type break with this.
+     *       | Identifier()
      *       | ThisExpression()
      *       | ArrayAllocationExpression()
      *       | AllocationExpression()
