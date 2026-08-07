@@ -73,7 +73,7 @@ class ClassAndIdentifier {
 
 class SymbolTable<K, V>{
     // Pair<ClassName, IdentifierName>, IdentifierInfo>
-    private LinkedList<HashMap<K, V>> symbols;
+    private LinkedList<HashMap<K, V>> symbols = new LinkedList<HashMap<K, V>>();
     public void enter(){
         symbols.add(0, new HashMap<K, V>());
     }
@@ -93,15 +93,49 @@ class SymbolTable<K, V>{
     }
 }
 
-class Visitor extends GJDepthFirst<String, Void>{
-    private SymbolTable<ClassAndIdentifier, String> variableSymbolTable;
-    private HashMap<ClassAndIdentifier, MethodInfo> methods; // why would this be a symbol table? it would always have one layer that is never exited
-    private HashMap<String, String> classesAndTheirParents; // merge into one with the above? would it make the algo for checking overloaded functions slower or faster?
+class Visitor extends GJDepthFirst<LinkedList<String>, Void>{
+    private SymbolTable<ClassAndIdentifier, String> variableSymbolTable = new SymbolTable<ClassAndIdentifier, String>();
+    private HashMap<ClassAndIdentifier, MethodInfo> methods = new HashMap<ClassAndIdentifier, MethodInfo>(); // why would this be a symbol table? it would always have one layer that is never exited
+    private HashMap<String, String> classesAndTheirParents = new HashMap<String, String>(); // merge into one with the above? would it make the algo for checking overloaded functions slower or faster?
     private String currentClass;
 
+   /**
+    * f0 -> "class"
+    * f1 -> Identifier()
+    * f2 -> "{"
+    * f3 -> "public"
+    * f4 -> "static"
+    * f5 -> "void"
+    * f6 -> "main"
+    * f7 -> "("
+    * f8 -> "String"
+    * f9 -> "["
+    * f10 -> "]"
+    * f11 -> Identifier()
+    * f12 -> ")"
+    * f13 -> "{"
+    * f14 -> ( VarDeclaration() )*
+    * f15 -> ( Statement() )*
+    * f16 -> "}"
+    * f17 -> "}"
+    */
     @Override
-    public String visit(MainClass n, Void argu) throws Exception {
-        this.currentClass = "Main"; //todo: looks like main class doesn't need to be called main
+    public LinkedList<String> visit(MainClass n, Void argu) throws Exception {
+
+        String mainClassName = n.f1.accept(this, null).get(0);
+        currentClass = mainClassName;
+        classesAndTheirParents.put(mainClassName, null);
+
+        // we don't add main method to the table since it's handled by exception later, just immediately start taking its local variables
+        variableSymbolTable.enter();
+        for(int i = 0; i < n.f14.size(); i++){
+            LinkedList<String> typeAndID = n.f14.elementAt(i).accept(this, null);
+            variableSymbolTable.insert(new ClassAndIdentifier(currentClass, typeAndID.get(0)), typeAndID.get(1));
+        }
+        // handle statements here
+
+        variableSymbolTable.exit();
+
         super.visit(n, argu);
         return null;
     }
@@ -111,8 +145,73 @@ class Visitor extends GJDepthFirst<String, Void>{
     * f1 -> Identifier()
     * f2 -> ";"
     */
-    // public R visit(VarDeclaration n, A argu) throws Exception {
-    //     String 
-    //     super.visit(n, argu);
-    // }
+    // index 0 = type, index 1 = identifier name
+    public LinkedList<String> visit(VarDeclaration n, Void argu) throws Exception {
+        LinkedList<String> ret = new LinkedList<String>();
+        ret.add(n.f0.accept(this, null).get(0));
+        ret.add(n.f1.accept(this, null).get(0));
+        return ret;
+    }
+
+    // returns just the name of the identifier in index 0
+    public LinkedList<String> visit(Identifier n, Void argu) throws Exception {
+        LinkedList<String> ret = new LinkedList<String>();
+        ret.add(n.f0.toString());
+        return ret;
+    }
+
+   /**
+    * f0 -> ArrayType()
+    *       | BooleanType()
+    *       | IntegerType()
+    *       | Identifier()
+    */
+    public LinkedList<String> visit(Type n, Void argu) throws Exception {
+        return n.f0.accept(this, argu);
+    }
+
+    /**
+     * f0 -> BooleanArrayType()
+     *       | IntegerArrayType()
+     */
+    public LinkedList<String> visit(ArrayType n, Void argu) throws Exception {
+       return n.f0.accept(this, argu);
+    }
+    /**
+     * f0 -> "boolean"
+     * f1 -> "["
+     * f2 -> "]"
+     */
+    public LinkedList<String> visit(BooleanArrayType n, Void argu) throws Exception {
+        LinkedList<String> ret= new LinkedList<String>();
+        ret.add("boolean[]");
+        return ret;
+    }
+    /**
+     * f0 -> "int"
+     * f1 -> "["
+     * f2 -> "]"
+     */
+    public LinkedList<String> visit(IntegerArrayType n, Void argu) throws Exception {
+        LinkedList<String> ret= new LinkedList<String>();
+        ret.add("int[]");
+        return ret;
+    }
+    /**
+     * f0 -> "boolean"
+     */
+    public LinkedList<String> visit(BooleanType n, Void argu) throws Exception {
+        LinkedList<String> ret= new LinkedList<String>();
+        ret.add("boolean");
+        return ret;
+    }
+    /**
+     * f0 -> "int"
+     */
+    public LinkedList<String> visit(IntegerType n, Void argu) throws Exception {
+        LinkedList<String> ret= new LinkedList<String>();
+        ret.add("int");
+        return ret;
+    }
+
 }
