@@ -12,3 +12,20 @@ type -> int, intArray, bool, boolArray, func (enum)
 additional (if func) -> return type, list of arguments (to check for incorrect overloading) (put this in its own class, this will be null if not func)
 
 SymbolTable type will have functions enter insert lookup exit as described in slides, will be wrapper around list
+
+todo: produce some information to make sure the same class cannot be defined twice (put them in a new symbolTable or make CLASS a MinijavaType)
+    Main class can be handled by exception (but not using an exception could be nicer)}
+    multiple different symbol tables for each kind of thing? like one for functions, one for classes one for variables
+    it seems that that's needed because a method and a variable can have the same name without conflict in java, while i don't think anything is said about that in minijava
+
+
+do i have to make sure that "args" is not used since minijava says they should not be used?
+"A MiniJava program is a file that begins with a special class that contains the main method and specific ***arguments that are not used***."
+this will probably be done automatically because i won't put them in the symbol table
+
+Structures: 
+-SymbolTable with tables of type Map<ClassAndIdentifier, varInfo> for fields and local variables
+-SymbolTable with tables of type Map<ClassAndIdentifier, methodInfo> for methods (they can have the same name as a field) (i think, find out if that's wrong
+and if so, just use the previous symboltable for methods too)
+-HashTable<String> for Class names (to check that they've not been declared twice)
+-something for class inheritance

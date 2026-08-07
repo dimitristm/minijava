@@ -5,8 +5,7 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 
-import java.util;
-import javafx.util;
+import java.util.*;
 
 public class Main {
     public static void main(String[] args) throws Exception {
@@ -24,7 +23,7 @@ public class Main {
 
             System.err.println("Program parsed successfully.");
 
-            Visitor eval = new MyVisitor();
+            Visitor eval = new Visitor();
             root.accept(eval, null);
         }
         catch(ParseException ex){
@@ -44,36 +43,46 @@ public class Main {
     }
 }
 
-enum Type{
-    INT,
-    INT_ARRAY,
-    BOOL,
-    BOOL_ARRAY,
-    FUNC
-}
-
-class AdditionalInfo{
+class FunctionInfo{ //todo: implement equals() and use it for checking that a function isn't overloaded because that's not part of minijava
     public String returnType;
-    public LinkedList<String> arguments; //todo: arraylist because i could figure it out all at once and so it won't have to be resized?
+    public LinkedList<String> argumentTypes; //todo: arraylist because i could figure it out all at once and so it won't have to be resized?
 }
 
 class IdentifierInfo{
-    public Type type;
-    public AdditionalInfo additionalInfo;
+    public String type;
+    public FunctionInfo additionalInfo; //if the identifier is actually a function, use this. todo: seperate symbol table for functions and romeve this from regular symbol table?
+}
+
+class ClassAndIdentifier {
+    String className;
+    String identifier;
+    ClassAndIdentifier(String className, String identifier){
+        this.className = className;
+        this.identifier = identifier;
+    }
+    @Override
+    public boolean equals(Object c){
+        ClassAndIdentifier y = (ClassAndIdentifier)c;
+        return this.className == y.className && this.identifier == y.identifier;
+    }
+    @Override
+    public int hashCode(){
+        return this.className.hashCode() + this.identifier.hashCode();
+    }
 }
 
 class SymbolTable{
     // Pair<ClassName, IdentifierName>, IdentifierInfo>
-    private LinkedList<Map<Pair<String, String>, IdentifierInfo>> symbols;
+    private LinkedList<HashMap<ClassAndIdentifier, IdentifierInfo>> symbols;
     public void enter(){
-        symbols.add(0, new Map<Pair<String, String>, IdentifierInfo>());
+        symbols.add(0, new HashMap<ClassAndIdentifier, IdentifierInfo>());
     }
-    public void insert(Map<Pair<String, String>, IdentifierInfo> newSymbol){
-        symbols.get(0).add(newSymbol);
+    public void insert(ClassAndIdentifier classAndIdentifier, IdentifierInfo identifierInfo){
+        symbols.get(0).put(classAndIdentifier, identifierInfo);
     }
     //returns null if the specified symbol does not exist
-    public IdentifierInfo lookup(Pair<String, String> key){
-        for (Map<Pair<String, String>, IdentifierInfo> table:symbols){
+    public IdentifierInfo lookup(ClassAndIdentifier key){
+        for (Map<ClassAndIdentifier, IdentifierInfo> table:symbols){
             IdentifierInfo val = table.get(key);
             if (val != null) {return val;}
         }
@@ -85,5 +94,23 @@ class SymbolTable{
 }
 
 class Visitor extends GJDepthFirst<String, Void>{
+    private SymbolTable symbolTable;
+    private String currentClass;
 
+    @Override
+    public String visit(MainClass n, Void argu) throws Exception {
+        this.currentClass = "Main"; //todo: looks like main class doesn't need to be called main
+        super.visit(n, argu);
+        return null;
+    }
+
+    /**
+    * f0 -> Type()
+    * f1 -> Identifier()
+    * f2 -> ";"
+    */
+    public R visit(VarDeclaration n, A argu) throws Exception {
+        String 
+        super.visit(n, argu);
+    }
 }
