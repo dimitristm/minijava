@@ -37,14 +37,15 @@ clause not returning a type when parsing identifier:
 maybe make Identifier return the type of the identifier in index 0 (if the identifier exists, else null) and the name in index 1
 
 todo: rename ret to describe what is in the string list for each visit function
-todo: check for Identifiers declared more than once in same scope
 todo: even better error messages, change the type of the exception that i throw
 todo: collect class declerations first to make sure that fields and local variables are of a real type as well as to make sure the functions called exist, i'll do this with a second visitor class
     and have it give the methods and classesAndTheirParents structures to the first one
 todo: find some way to make the symboltable print the value (maybe just undo the generics because i won't need them anyway, but hopefully not because i like them)
-todo: handle statements
 todo: make everything in the first visitor return a class with type and ID or null to make things objectively better because right now im basically bypassing the type system
-
+todo: add the @Override
+todo: support this: "A a = new B();" when B extends A is correct, and the same applies when a method expects a parameter of type A and a B instance is given instead.
+todo: handle things using fields from their parent class
+todo: make methodinfo fields private with get functions
 just gonna remove super.visit because it breaks regular functions in acceptable files (exits the scope and makes the functions think that variables aren't declared)
 
 how to get current line number in this tool? it will be usefull for exception messages
@@ -54,3 +55,42 @@ find every time we use the type of a variable found via Identifier visit functio
 
 ---no declarations inside the paren of an if
 ---no declarations inside ifs and whiles and blocks etc
+
+can main be called by other functions?
+
+all this stuff is checked in the collector visitor:
+populating classesAndTheirParents:
+    check whether a class has already been defined with that name. if yes, error
+    put the name of the class in classesAndTheirParents with null if it's not inheriting
+    -but if it's inheriting, make sure the class it's inheriting from has already been defined (cannot define it later, that's invalid)
+
+populating methods:
+    if the name of the method has already been defined with another signature in this class or its parent class, error (we have no function overloading)
+    make sure it does not have a void return type, if it does, error
+    add the needed information to methods
+
+need a list of string for formalparameter list, make new visitor classes every time we need another return type?
+
+class MethodInfo{ //todo: implement equals() and use it for checking that a function isn't overloaded because that's not part of minijava
+    public String returnType;
+    public LinkedList<String> argumentTypes; //todo: arraylist because i could figure it out all at once and so it won't have to be resized?
+}
+    public HashMap<ClassAndIdentifier, MethodInfo> getMethods(){ return this.methods; }
+
+
+inheritied fields handled by not exiting when class ends, only enter and exit on methods
+make more visitors to tidy up code and make other visitors inherit/ use it (like a simple visitor that returns types of primitives or declarations)
+tidy up more: make first visitor return just the String that represents the type, if Identifier returns null type it doesn't exist so exception, if we are declaring the identifier then call the StringRepVisitor instead
+
+can void be an argument type to a method?
+
+
+todo: make identifier visit handle fields with the same name as a field in the parent class (trying this gives error: Exception in thread "main" java.lang.NullPointerException: Cannot invoke "String.equals(Object)" because "<local4>" is null)
+
+
+what if a parameter name gets reused as a local var
+
+--------
+
+void methods are apparently handled by grammar so maybe remove the check for that
+!= exists

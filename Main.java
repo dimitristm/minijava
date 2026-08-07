@@ -23,7 +23,9 @@ public class Main {
 
             System.err.println("Program parsed successfully.");
 
-            Visitor eval = new Visitor();
+            DeclarationCollectorVisitor declarations = new DeclarationCollectorVisitor();
+            root.accept(declarations, null);
+            TypecheckVisitor eval = new TypecheckVisitor(declarations.getMethods(), declarations.getClassesAndTheirParents());
             root.accept(eval, null);
         }
         catch(ParseException ex){
@@ -43,9 +45,18 @@ public class Main {
     }
 }
 
-class MethodInfo{ //todo: implement equals() and use it for checking that a function isn't overloaded because that's not part of minijava
+class MethodInfo{
     public String returnType;
     public LinkedList<String> argumentTypes; //todo: arraylist because i could figure it out all at once and so it won't have to be resized?
+    MethodInfo(String retType, LinkedList<String> argTypes){
+        this.returnType = retType;
+        this.argumentTypes = argTypes;
+    }
+    @Override
+    public boolean equals(Object m){
+        MethodInfo mInfo = (MethodInfo)m;
+        return mInfo.returnType.equals(this.returnType) && mInfo.argumentTypes.equals(this.argumentTypes);
+    }
 }
 
 class IdentifierInfo{
@@ -78,7 +89,7 @@ class SymbolTable<K, V>{
         symbols.add(0, new HashMap<K, V>());
     }
     public void insert(K classAndIdentifier, V info) throws Exception{
-        if (!(this.lookup(classAndIdentifier) == null)) throw new Exception("An identifier was used twice in the same scope.");
+        if (symbols.get(0).containsKey(classAndIdentifier)) throw new Exception("An identifier was declared twice in the same scope.");
         symbols.get(0).put(classAndIdentifier, info);
     }
     //returns null if the specified symbol does not exist
@@ -94,12 +105,17 @@ class SymbolTable<K, V>{
     }
 }
 
-class Visitor extends GJDepthFirst<LinkedList<String>, Void>{
+class TypecheckVisitor extends GJDepthFirst<LinkedList<String>, Void>{
     //in SymbolTable<ClassAndIdentifier, String> the string represents the type of the field/variable
     private SymbolTable<ClassAndIdentifier, String> variableSymbolTable = new SymbolTable<ClassAndIdentifier, String>();
-    private HashMap<ClassAndIdentifier, MethodInfo> methods = new HashMap<ClassAndIdentifier, MethodInfo>(); // why would this be a symbol table? it would always have one layer that is never exited
-    private HashMap<String, String> classesAndTheirParents = new HashMap<String, String>(); // merge into one with the above? would it make the algo for checking overloaded functions slower or faster?
+    private final HashMap<ClassAndIdentifier, MethodInfo> methods; // why would this be a symbol table? it would always have one layer that is never exited
+    private final HashMap<String, String> classesAndTheirParents; // merge into one with the above? would it make the algo for checking overloaded functions slower or faster?
     private String currentClass;
+
+    TypecheckVisitor(HashMap<ClassAndIdentifier, MethodInfo> methods, HashMap<String, String> classesAndTheirParents){
+        this.methods = methods;
+        this.classesAndTheirParents = classesAndTheirParents;
+    }
 
    /**
     * f0 -> "class"
@@ -124,24 +140,100 @@ class Visitor extends GJDepthFirst<LinkedList<String>, Void>{
     @Override
     public LinkedList<String> visit(MainClass n, Void argu) throws Exception {
 
-        String mainClassName = n.f1.accept(this, null).get(1);
-        currentClass = mainClassName;
-        classesAndTheirParents.put(mainClassName, null);
+        currentClass = n.f1.accept(this, null).get(1);
+        // classesAndTheirParents.put(currentClass, null); //shouldn't this be a compiler error anyway because classesAndTheirParents is final?
 
-        // we don't add main method to the table since it's handled by exception later, just immediately start taking its local variables
-        variableSymbolTable.enter();
-        for(int i = 0; i < n.f14.size(); i++){
+        // we don't add main method to the table since it's handled by exception later (?), just immediately start taking its local variables
+        variableSymbolTable.enter(); //create first scope where the fields of all classes are
+        variableSymbolTable.enter(); //go into the scope of main method
+        for(int i = 0; i < n.f14.size(); i++){ //insert the local variables of main
             LinkedList<String> typeAndID = n.f14.elementAt(i).accept(this, null);
             variableSymbolTable.insert(new ClassAndIdentifier(currentClass, typeAndID.get(1)), typeAndID.get(0));
         }
         // handle statements here
         n.f15.accept(this, null);
-        variableSymbolTable.exit();
-
+        variableSymbolTable.exit(); //exit main method scope
         return null;
     }
 
-//------------var declarations------------
+   /**
+    * f0 -> "class"
+    * f1 -> Identifier()
+    * f2 -> "{"
+    * f3 -> ( VarDeclaration() )*
+    * f4 -> ( MethodDeclaration() )*
+    * f5 -> "}"
+    */
+    public LinkedList<String> visit(ClassDeclaration n, Void argu) throws Exception {
+        currentClass = n.f1.accept(this, null).get(1);
+        for(int i = 0; i < n.f3.size(); i++){//insert fields to symbol table
+            LinkedList<String> typeAndID = n.f3.elementAt(i).accept(this, null);
+            variableSymbolTable.insert(new ClassAndIdentifier(currentClass, typeAndID.get(1)), typeAndID.get(0));
+        }
+        //handle methods
+        n.f4.accept(this, null);
+        return null;
+    }
+
+   /**
+    * f0 -> "class"
+    * f1 -> Identifier()
+    * f2 -> "extends"
+    * f3 -> Identifier()
+    * f4 -> "{"
+    * f5 -> ( VarDeclaration() )*
+    * f6 -> ( MethodDeclaration() )*
+    * f7 -> "}"
+    */
+   public LinkedList<String> visit(ClassExtendsDeclaration n, Void argu) throws Exception {
+        currentClass = n.f1.accept(this, null).get(1);
+        for(int i = 0; i < n.f5.size(); i++){//insert fields to symbol table
+            LinkedList<String> typeAndID = n.f5.elementAt(i).accept(this, null);
+            variableSymbolTable.insert(new ClassAndIdentifier(currentClass, typeAndID.get(1)), typeAndID.get(0));
+        }
+        //handle methods
+        n.f6.accept(this, null);
+        return null;
+   }
+
+   /**
+    * f0 -> "public"
+    * f1 -> Type()
+    * f2 -> Identifier()
+    * f3 -> "("
+    * f4 -> ( FormalParameterList() )?
+    * f5 -> ")"
+    * f6 -> "{"
+    * f7 -> ( VarDeclaration() )*
+    * f8 -> ( Statement() )*
+    * f9 -> "return"
+    * f10 -> Expression()
+    * f11 -> ";"
+    * f12 -> "}"
+    */
+    public LinkedList<String> visit(MethodDeclaration n, Void argu) throws Exception {
+        variableSymbolTable.enter();
+        //add the parameters and the varDeclarations to the symboltable -- todo: what is f4 if we have no parameters and does it break this?
+        //parameters:
+        if (n.f4.present()){
+        FormalParamListData params = n.f4.accept(new FormalParameterVisitor(), null);
+            for (int i = 0; i < params.size(); i++){
+                variableSymbolTable.insert(new ClassAndIdentifier(currentClass, params.argumentIDs.get(i)), params.argumentTypes.get(i));
+            }
+        }
+        //local vars:
+        for(int i = 0; i < n.f7.size(); i++){//insert fields to symbol table
+            LinkedList<String> typeAndID = n.f7.elementAt(i).accept(this, null);
+            variableSymbolTable.insert(new ClassAndIdentifier(currentClass, typeAndID.get(1)), typeAndID.get(0));
+        }
+        n.f8.accept(this, argu);
+        //make sure the return type is correct
+        if (!(n.f1.accept(this, null).get(0) == n.f10.accept(this, null).get(0))) { throw new Exception("the return type of the function " + n.f2.accept(this, null).get(1) + " is wrong.");}
+        variableSymbolTable.exit();
+        return null;
+    }
+
+    //------------var declarations------------
     /**
     * f0 -> Type()
     * f1 -> Identifier()
@@ -160,11 +252,22 @@ class Visitor extends GJDepthFirst<LinkedList<String>, Void>{
     public LinkedList<String> visit(Identifier n, Void argu) throws Exception {
         LinkedList<String> typeIfItExistsAndID = new LinkedList<String>();
         String IDname = n.f0.toString();
-        typeIfItExistsAndID.add(variableSymbolTable.lookup(new ClassAndIdentifier(currentClass, IDname)));
+        String type = null;
+
+        //look in the current class and the parent classes for the type of this identifier, if it's not found
+        //then it has not been declared in this scope so type = null
+        String currentClassToCheck = currentClass;
+        while (currentClassToCheck != null){
+            type = variableSymbolTable.lookup(new ClassAndIdentifier(currentClassToCheck, IDname));
+            if (type != null) break;
+            currentClassToCheck = classesAndTheirParents.get(currentClassToCheck);
+        }
+
+        typeIfItExistsAndID.add(type);
         typeIfItExistsAndID.add(IDname);
         return typeIfItExistsAndID;
     }
-//------------getting types------------
+   //------------getting types------------
    /**
     * f0 -> ArrayType()
     *       | BooleanType()
@@ -218,7 +321,7 @@ class Visitor extends GJDepthFirst<LinkedList<String>, Void>{
         ret.add("int");
         return ret;
     }
-//------------expressions return their type------------
+   //------------expressions return their type------------
    /**
     * f0 -> AndExpression()
     *       | CompareExpression()
@@ -471,7 +574,7 @@ class Visitor extends GJDepthFirst<LinkedList<String>, Void>{
     public LinkedList<String> visit(BracketExpression n, Void argu) throws Exception {
         return n.f1.accept(this, argu);
     }
-//statements
+   //statements
    /**
     * f0 -> Block()
     *       | AssignmentStatement()
@@ -507,6 +610,7 @@ class Visitor extends GJDepthFirst<LinkedList<String>, Void>{
         LinkedList<String> ret = new LinkedList<String>();
         String type1 = node1.accept(this, null).get(0);
         String type2 = node2.accept(this, null).get(0);
+        if (type1 == null || type2 == null) {throw new Exception("could not find type of identifier, probably not declared yet");}
         if (type1.equals(type2)) {ret.add(type1); return ret;}
         else throw new Exception("Expected that two things would be of the same type");
     }
@@ -575,6 +679,217 @@ class Visitor extends GJDepthFirst<LinkedList<String>, Void>{
        n.f3.accept(this, argu);
        n.f4.accept(this, argu);
        return _ret;
+    }
+
+}
+
+class DeclarationCollectorVisitor extends GJDepthFirst<String, Void>{
+    private HashMap<ClassAndIdentifier, MethodInfo> methods = new HashMap<ClassAndIdentifier, MethodInfo>(); // why would this be a symbol table? it would always have one layer that is never exited
+    private HashMap<String, String> classesAndTheirParents = new HashMap<String, String>(); // merge into one with the above? would it make the algo for checking overloaded functions slower or faster?
+    private String currentClass;
+    public HashMap<ClassAndIdentifier, MethodInfo> getMethods(){ return this.methods; }
+    public HashMap<String, String> getClassesAndTheirParents() { return this.classesAndTheirParents; }
+
+   /**
+    * f0 -> "class"
+    * f1 -> Identifier()
+    * f2 -> "{"
+    * f3 -> "public"
+    * f4 -> "static"
+    * f5 -> "void"
+    * f6 -> "main"
+    * f7 -> "("
+    * f8 -> "String"
+    * f9 -> "["
+    * f10 -> "]"
+    * f11 -> Identifier()
+    * f12 -> ")"
+    * f13 -> "{"
+    * f14 -> ( VarDeclaration() )*
+    * f15 -> ( Statement() )*
+    * f16 -> "}"
+    * f17 -> "}"
+    */
+    @Override
+    public String visit(MainClass n, Void argu) throws Exception {
+        String mainClassName = n.f1.accept(this, null);
+        currentClass = mainClassName;
+        classesAndTheirParents.put(mainClassName, null);
+        return null;
+    }
+
+    // returns the name, it will be a type if it's used to find the name of a class
+    public String visit(Identifier n, Void argu) throws Exception {
+        return n.f0.toString();
+    }
+
+   /**
+    * f0 -> "class"
+    * f1 -> Identifier()
+    * f2 -> "{"
+    * f3 -> ( VarDeclaration() )*
+    * f4 -> ( MethodDeclaration() )*
+    * f5 -> "}"
+    */
+   public String visit(ClassDeclaration n, Void argu) throws Exception {
+        this.currentClass = n.f1.accept(this, null);
+        if (classesAndTheirParents.containsKey(currentClass)) {throw new Exception("This class has already been declared elsewhere: " + currentClass); }
+        classesAndTheirParents.put(currentClass, null);
+        n.f4.accept(this, argu);
+        return null;
+   }
+
+   /**
+    * f0 -> "class"
+    * f1 -> Identifier()
+    * f2 -> "extends"
+    * f3 -> Identifier()
+    * f4 -> "{"
+    * f5 -> ( VarDeclaration() )*
+    * f6 -> ( MethodDeclaration() )*
+    * f7 -> "}"
+    */
+   public String visit(ClassExtendsDeclaration n, Void argu) throws Exception {
+        this.currentClass = n.f1.accept(this, null);
+        String parentClass = n.f3.accept(this, null);
+        if (classesAndTheirParents.containsKey(currentClass)) {throw new Exception("This class has already been declared elsewhere: " + currentClass); }
+        if (!classesAndTheirParents.containsKey(parentClass)) { throw new Exception("Class " + currentClass + " tried to inherit from a class called " + parentClass + ", but that class had not been declared yet or has no declaration at all");}
+        classesAndTheirParents.put(currentClass, parentClass);
+        n.f6.accept(this, argu);
+        return null;
+   }
+
+   /**
+    * f0 -> "public"
+    * f1 -> Type()
+    * f2 -> Identifier()
+    * f3 -> "("
+    * f4 -> ( FormalParameterList() )? -> visitor with return type List<String> which is just the types of the args in order
+    * f5 -> ")"
+    * f6 -> "{"
+    * f7 -> ( VarDeclaration() )*
+    * f8 -> ( Statement() )*
+    * f9 -> "return"
+    * f10 -> Expression()
+    * f11 -> ";"
+    * f12 -> "}"
+    */
+    public String visit(MethodDeclaration n, Void argu) throws Exception {
+        String methodName = n.f2.accept(this, argu);
+        LinkedList<String> argTypes = n.f4.present() ? n.f4.accept(new FormalParameterVisitor(), null).argumentTypes : new LinkedList<String>();
+        MethodInfo methodInfo = new MethodInfo(n.f1.accept(this, argu), argTypes);
+        if (methodInfo.returnType == "void") {throw new Exception("A void method was declared. There are no void methods in this language.");} 
+        // first check the current class to see if this method name has already been used and error if it has
+        // then check parent classes to see if the name has been used in which case they must have same methodInfo
+        if (methods.containsKey(new ClassAndIdentifier(currentClass, methodName))) { throw new Exception("Declared the method " + methodName + " twice in one class");}
+        String currentClassToCheckForWrongOverload = classesAndTheirParents.get(currentClass);
+        while(!(currentClassToCheckForWrongOverload == null)){
+            MethodInfo inheritedMethodInfo = methods.get(new ClassAndIdentifier(currentClassToCheckForWrongOverload, methodName));
+            if (!(inheritedMethodInfo == null)){
+                if (inheritedMethodInfo.equals(methodInfo)) { break; }
+                else { throw new Exception("Incorrect overload for method " + methodName + " in class " + currentClass);}
+            }
+            currentClassToCheckForWrongOverload = classesAndTheirParents.get(currentClassToCheckForWrongOverload);
+        }
+        methods.put(new ClassAndIdentifier(currentClass, methodName), methodInfo);
+        return null;
+    }
+
+   public String visit(BooleanArrayType n, Void argu) throws Exception {
+       return "boolean[]";
+   }
+
+   public String visit(IntegerArrayType n, Void argu) throws Exception {
+      return "int[]";
+   }
+
+   public String visit(BooleanType n, Void argu) throws Exception {
+      return "boolean";
+   }
+
+   public String visit(IntegerType n, Void argu) throws Exception {
+      return "int";
+   }
+}
+
+//visitor that returns the string that represents primitive types, as well as IDs (identifiers) in string format
+class StringRepresentationVisitor extends GJDepthFirst<String, Void>{
+   public String visit(BooleanArrayType n, Void argu){
+       return "boolean[]";
+   }
+
+   public String visit(IntegerArrayType n, Void argu){
+      return "int[]";
+   }
+
+   public String visit(BooleanType n, Void argu){
+      return "boolean";
+   }
+
+   public String visit(IntegerType n, Void argu){
+      return "int";
+   }
+    // returns the name, it will be a type if it's used to find the name of a class
+    public String visit(Identifier n, Void argu){
+        return n.f0.toString();
+    }
+} //todo: use this to get rid of repetition in other visitors
+
+class FormalParamListData{
+    public LinkedList<String> argumentTypes = new LinkedList<String>();
+    public LinkedList<String> argumentIDs = new LinkedList<String>();
+    public void add(String type, String ID){
+        this.argumentTypes.add(type);
+        this.argumentIDs.add(ID);
+    }
+    public void addAll(FormalParamListData otherList){
+        this.argumentTypes.addAll(otherList.argumentTypes);
+        this.argumentIDs.addAll(otherList.argumentIDs);
+    }
+    public int size(){
+        return argumentTypes.size();
+    }
+}
+
+class FormalParameterVisitor extends GJDepthFirst<FormalParamListData, Void>{
+    private StringRepresentationVisitor stringRep = new StringRepresentationVisitor();
+   /**
+    * f0 -> FormalParameter()
+    * f1 -> FormalParameterTail()
+    */
+    public FormalParamListData visit(FormalParameterList n, Void argu) throws Exception {
+        FormalParamListData list = n.f0.accept(this, argu);
+        list.addAll(n.f1.accept(this, argu));
+        return list;
+    }
+
+   /**
+    * f0 -> Type()
+    * f1 -> Identifier()
+    */
+    public FormalParamListData visit(FormalParameter n, Void argu) throws Exception {
+        FormalParamListData data = new FormalParamListData();
+        data.add(n.f0.accept(stringRep, null), n.f1.accept(stringRep, null));
+        return data;
+    }
+
+   /**
+    * f0 -> ( FormalParameterTerm() )*
+    */
+    public FormalParamListData visit(FormalParameterTail n, Void argu) throws Exception {
+        FormalParamListData types = new FormalParamListData();
+        for(int i = 0; i < n.f0.size(); i++){
+            types.addAll(n.f0.elementAt(i).accept(this, null));
+        }
+        return types;
+    }
+
+   /**
+    * f0 -> ","
+    * f1 -> FormalParameter()
+    */
+    public FormalParamListData visit(FormalParameterTerm n, Void argu) throws Exception {
+        return n.f1.accept(this, argu);
     }
 
 }
