@@ -72,7 +72,7 @@ class SemanticCheckException extends Exception{
 
 class MethodInfo{
     public String returnType;
-    public LinkedList<String> argumentTypes; // has 0 elements if no arguments exist//todo: arraylist because i could figure it out all at once and so it won't have to be resized?
+    public LinkedList<String> argumentTypes;
     MethodInfo(String retType, LinkedList<String> argTypes){
         this.returnType = retType;
         this.argumentTypes = argTypes;
@@ -82,11 +82,6 @@ class MethodInfo{
         MethodInfo mInfo = (MethodInfo)m;
         return mInfo.returnType.equals(this.returnType) && mInfo.argumentTypes.equals(this.argumentTypes);
     }
-}
-
-class IdentifierInfo{
-    public String type;
-    public MethodInfo additionalInfo; //if the identifier is actually a function, use this. todo: seperate symbol table for functions and romeve this from regular symbol table?
 }
 
 class ClassAndIdentifier {
@@ -108,7 +103,6 @@ class ClassAndIdentifier {
 }
 
 class SymbolTable<K, V>{
-    // Pair<ClassName, IdentifierName>, IdentifierInfo>
     private LinkedList<HashMap<K, V>> symbols = new LinkedList<HashMap<K, V>>();
     public void enter(){
         symbols.add(0, new HashMap<K, V>());
@@ -133,8 +127,8 @@ class SymbolTable<K, V>{
 class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
     //in SymbolTable<ClassAndIdentifier, String> the string represents the type of the field/variable
     private SymbolTable<ClassAndIdentifier, String> variableSymbolTable = new SymbolTable<ClassAndIdentifier, String>();
-    private final HashMap<ClassAndIdentifier, MethodInfo> methods; // why would this be a symbol table? it would always have one layer that is never exited
-    private final HashMap<String, String> classesAndTheirParents; // merge into one with the above? would it make the algo for checking overloaded functions slower or faster?
+    private final HashMap<ClassAndIdentifier, MethodInfo> methods;
+    private final HashMap<String, String> classesAndTheirParents;
     private String currentClass;
 
     TypecheckVisitor(HashMap<ClassAndIdentifier, MethodInfo> methods, HashMap<String, String> classesAndTheirParents){
@@ -166,9 +160,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
     public String visit(MainClass n, Boolean expectingTypeOfIdentifier) throws Exception {
 
         currentClass = n.f1.accept(this, false);
-        // classesAndTheirParents.put(currentClass, false); //shouldn't this be a compiler error anyway because classesAndTheirParents is final?
 
-        // we don't add main method to the table since it's handled by exception later (?), just immediately start taking its local variables
         variableSymbolTable.enter(); //create first scope where the fields of all classes are
         variableSymbolTable.enter(); //go into the scope of main method
         //insert the local variables of main
@@ -235,7 +227,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
         //add the parameters and the varDeclarations to the symboltable
         //parameters:
         if (n.f4.present()){
-            FormalParamListData params = n.f4.accept(new FormalParameterVisitor(), null); // todo?: make the formalParameterVisitor add them to the symbol table?
+            FormalParamListData params = n.f4.accept(new FormalParameterVisitor(), null);
             for (int i = 0; i < params.size(); i++){
                 variableSymbolTable.insert(new ClassAndIdentifier(currentClass, params.argumentIDs.get(i)), params.argumentTypes.get(i));
             }
@@ -397,7 +389,6 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
      */
     public String visit(ArrayLookup n, Boolean expectingTypeOfIdentifier) throws Exception {
         bothAreCompatibleType(n.f2.accept(this,false), "int");
-        // if (!n.f2.accept(this, false).equals("int")) { throw new SemanticCheckException("Array lookup needs an int inside the brackets"); }
         String type = n.f0.accept(this, false);
         return type.substring(0, type.length() - 2);//remove the last 2 characters ([])
     }
@@ -421,8 +412,6 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
      */
     public String visit(MessageSend n, Boolean expectingTypeOfIdentifier) throws Exception {
         String className = n.f0.accept(this, false);
-        // i think i don't have to check if the class exists because if it didn't then we'd already have thrown an exception
-        // if (!classesAndTheirParents.containsKey(className)) {throw new Exception();} 
         String methodName = n.f2.accept(this, false);
 
         //make sure the method exists in the class or a parent class
@@ -450,7 +439,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
      *       | PrimaryExpression()
      */
     public String visit(Clause n, Boolean expectingTypeOfIdentifier) throws Exception {
-       return n.f0.accept(this, false); //todo: does this need anything?
+       return n.f0.accept(this, false);
     }
     /**
      * f0 -> IntegerLiteral()
@@ -563,7 +552,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
 
     //check that type2 can be assigned to type 1, if not, throw an exception
     private void bothAreCompatibleType(String type1, String type2) throws Exception{
-        if (type1 == null || type2 == null) {throw new SemanticCheckException("could not find type, probably not declared yet");}//?
+        if (type1 == null || type2 == null) {throw new SemanticCheckException("could not find type, probably not declared yet");}
         if (type1.equals(type2)) {return;}
         // check if type2 is derived by type1, if yes, the assignment is correct
         String ancestorOfType2 = classesAndTheirParents.get(type2);
@@ -599,7 +588,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
         if (!IDtype.endsWith("[]")) {throw new SemanticCheckException("tried to do an array assignment statement on a non-array");}
         if (!n.f2.accept(this, false).equals("int")) { throw new SemanticCheckException("Tried to do an array assignment Statement but the there wasn't an int inside the brackets");}
         if (!IDtype.equals(rType + "[]")) {throw new SemanticCheckException("In an array assignment statement, the right hand value is not of the right type");}
-        return rType; //does it make any sense to return this? we don't have complex statements that take the return type of other statements i think so maybe this is useless
+        return rType;
     }   
     /**
      * f0 -> "if"
@@ -643,8 +632,8 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
 }
 
 class DeclarationCollectorVisitor extends StringRepresentationVisitor{
-    private HashMap<ClassAndIdentifier, MethodInfo> methods = new HashMap<ClassAndIdentifier, MethodInfo>(); // why would this be a symbol table? it would always have one layer that is never exited
-    private HashMap<String, String> classesAndTheirParents = new HashMap<String, String>(); // merge into one with the above? would it make the algo for checking overloaded functions slower or faster?
+    private HashMap<ClassAndIdentifier, MethodInfo> methods = new HashMap<ClassAndIdentifier, MethodInfo>()
+    private HashMap<String, String> classesAndTheirParents = new HashMap<String, String>();
     private String currentClass;
     public HashMap<ClassAndIdentifier, MethodInfo> getMethods(){ return this.methods; }
     public HashMap<String, String> getClassesAndTheirParents() { return this.classesAndTheirParents; }
@@ -718,7 +707,7 @@ class DeclarationCollectorVisitor extends StringRepresentationVisitor{
     * f1 -> Type()
     * f2 -> Identifier()
     * f3 -> "("
-    * f4 -> ( FormalParameterList() )? -> visitor with return type List<String> which is just the types of the args in order
+    * f4 -> ( FormalParameterList() )?
     * f5 -> ")"
     * f6 -> "{"
     * f7 -> ( VarDeclaration() )*
@@ -732,7 +721,7 @@ class DeclarationCollectorVisitor extends StringRepresentationVisitor{
         String methodName = n.f2.accept(this, argu);
         LinkedList<String> argTypes = n.f4.present() ? n.f4.accept(new FormalParameterVisitor(), null).argumentTypes : new LinkedList<String>();
         MethodInfo methodInfo = new MethodInfo(n.f1.accept(this, argu), argTypes);
-        if (methodInfo.returnType.equals("void")) {throw new SemanticCheckException("A void method was declared. There are no void methods in this language.");} //todo: remove since it is caught by parser?
+        if (methodInfo.returnType.equals("void")) {throw new SemanticCheckException("A void method was declared. There are no void methods in this language.");}
         // first check the current class to see if this method name has already been used and error if it has
         // then check parent classes to see if the name has been used in which case they must have same methodInfo
         if (methods.containsKey(new ClassAndIdentifier(currentClass, methodName))) { throw new SemanticCheckException("Declared the method " + methodName + " twice in one class");}
@@ -866,8 +855,8 @@ class OffsetGeneratorVisitor extends StringRepresentationVisitor{
     private String currentClass = null;
     private HashMap<String, Integer> storageRequired = new HashMap<String, Integer>();
 
-    private HashMap<String, String> classesAndTheirParents = new HashMap<String, String>(); // merge into one with the above? would it make the algo for checking overloaded functions slower or faster?
-    private HashMap<ClassAndIdentifier, MethodInfo> methods = new HashMap<ClassAndIdentifier, MethodInfo>(); // why would this be a symbol table? it would always have one layer that is never exited
+    private HashMap<String, String> classesAndTheirParents = new HashMap<String, String>();
+    private HashMap<ClassAndIdentifier, MethodInfo> methods = new HashMap<ClassAndIdentifier, MethodInfo>();
 
     private Integer getStorageRequired(String type, boolean isFunction){
         if (isFunction) { return 8; } //it is a pointer
