@@ -43,14 +43,14 @@ public class Main {
     }
 }
 
-class FunctionInfo{ //todo: implement equals() and use it for checking that a function isn't overloaded because that's not part of minijava
+class MethodInfo{ //todo: implement equals() and use it for checking that a function isn't overloaded because that's not part of minijava
     public String returnType;
     public LinkedList<String> argumentTypes; //todo: arraylist because i could figure it out all at once and so it won't have to be resized?
 }
 
 class IdentifierInfo{
     public String type;
-    public FunctionInfo additionalInfo; //if the identifier is actually a function, use this. todo: seperate symbol table for functions and romeve this from regular symbol table?
+    public MethodInfo additionalInfo; //if the identifier is actually a function, use this. todo: seperate symbol table for functions and romeve this from regular symbol table?
 }
 
 class ClassAndIdentifier {
@@ -71,19 +71,19 @@ class ClassAndIdentifier {
     }
 }
 
-class SymbolTable{
+class SymbolTable<K, V>{
     // Pair<ClassName, IdentifierName>, IdentifierInfo>
-    private LinkedList<HashMap<ClassAndIdentifier, IdentifierInfo>> symbols;
+    private LinkedList<HashMap<K, V>> symbols;
     public void enter(){
-        symbols.add(0, new HashMap<ClassAndIdentifier, IdentifierInfo>());
+        symbols.add(0, new HashMap<K, V>());
     }
-    public void insert(ClassAndIdentifier classAndIdentifier, IdentifierInfo identifierInfo){
-        symbols.get(0).put(classAndIdentifier, identifierInfo);
+    public void insert(K classAndIdentifier, V info){
+        symbols.get(0).put(classAndIdentifier, info);
     }
     //returns null if the specified symbol does not exist
-    public IdentifierInfo lookup(ClassAndIdentifier key){
-        for (Map<ClassAndIdentifier, IdentifierInfo> table:symbols){
-            IdentifierInfo val = table.get(key);
+    public V lookup(K key){
+        for (Map<K, V> table:symbols){
+            V val = table.get(key);
             if (val != null) {return val;}
         }
         return null;
@@ -94,7 +94,9 @@ class SymbolTable{
 }
 
 class Visitor extends GJDepthFirst<String, Void>{
-    private SymbolTable symbolTable;
+    private SymbolTable<ClassAndIdentifier, String> variableSymbolTable;
+    private HashMap<ClassAndIdentifier, MethodInfo> methods; // why would this be a symbol table? it would always have one layer that is never exited
+    private HashMap<String, String> classesAndTheirParents; // merge into one with the above? would it make the algo for checking overloaded functions slower or faster?
     private String currentClass;
 
     @Override
@@ -109,8 +111,8 @@ class Visitor extends GJDepthFirst<String, Void>{
     * f1 -> Identifier()
     * f2 -> ";"
     */
-    public R visit(VarDeclaration n, A argu) throws Exception {
-        String 
-        super.visit(n, argu);
-    }
+    // public R visit(VarDeclaration n, A argu) throws Exception {
+    //     String 
+    //     super.visit(n, argu);
+    // }
 }

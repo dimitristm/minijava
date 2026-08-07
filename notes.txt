@@ -29,3 +29,4 @@ Structures:
 and if so, just use the previous symboltable for methods too)
 -HashTable<String> for Class names (to check that they've not been declared twice)
 -something for class inheritance
+---merge the previous 2 structures into one hashmap
