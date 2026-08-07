@@ -31,7 +31,7 @@ public class Main {
                     System.err.println("SUCCESS: Program " + args[i] + " passed the semantic check.");
 
                     System.out.println("Offsets:");
-                    OffsetGeneratorVisitor ofvis = new OffsetGeneratorVisitor();
+                    OffsetGeneratorVisitor ofvis = new OffsetGeneratorVisitor(declarations.getMethods(), declarations.getClassesAndTheirParents());
                     root.accept(ofvis, null);
                     ofvis.printOffsets();
 
@@ -849,21 +849,21 @@ class ClassOffsets{
     }
 }
 class OffsetGeneratorVisitor extends StringRepresentationVisitor{
-    // OffsetGeneratorVisitor(HashMap<ClassAndIdentifier, MethodInfo> methods, HashMap<String, String> classesAndTheirParents){
-    //     this.classesAndTheirParents = classesAndTheirParents;
-    //     this.methods = methods;
-    // }
-    private LinkedList<ClassOffsets> offsets = new LinkedList<ClassOffsets>();
-    private String currentClass;
-    private HashMap<String, Integer> storageRequired = new HashMap<String, Integer>();
-
-
-    OffsetGeneratorVisitor(){
+    OffsetGeneratorVisitor(HashMap<ClassAndIdentifier, MethodInfo> methods, HashMap<String, String> classesAndTheirParents){
+        this.classesAndTheirParents = classesAndTheirParents;
+        this.methods = methods;
         storageRequired.put("int", 4);
         storageRequired.put("boolean", 1);
         storageRequired.put("int[]", 8);
         storageRequired.put("boolean[]", 8);
     }
+    private LinkedList<ClassOffsets> offsets = new LinkedList<ClassOffsets>();
+    private String currentClass = null;
+    private HashMap<String, Integer> storageRequired = new HashMap<String, Integer>();
+
+    private HashMap<String, String> classesAndTheirParents = new HashMap<String, String>(); // merge into one with the above? would it make the algo for checking overloaded functions slower or faster?
+    private HashMap<ClassAndIdentifier, MethodInfo> methods = new HashMap<ClassAndIdentifier, MethodInfo>(); // why would this be a symbol table? it would always have one layer that is never exited
+
     private Integer getStorageRequired(String type, boolean isFunction){
         if (isFunction) { return 8; } //it is a pointer
         Integer storage = storageRequired.get(type);
@@ -929,24 +929,24 @@ class OffsetGeneratorVisitor extends StringRepresentationVisitor{
     * f2 -> Identifier()
     */
     public String visit(MethodDeclaration n, Void argu) throws Exception {
-        // String parentClass = classesAndTheirParents.get(currentClass);
+        String parentClass = classesAndTheirParents.get(currentClass);
         String methodName = n.f2.accept(this, null);
-        // if(parentClass == null){
+        if(parentClass == null){
             offsets.getLast().addMember(methodName, getStorageRequired(null, true), true);
-        // }
-        // else{
-        //     boolean methodIsBeingOverriden = false;
-        //     while(parentClass != null){
-        //         if(methods.get(new ClassAndIdentifier(parentClass, methodName)) != null){
-        //             methodIsBeingOverriden = true;
-        //             break;
-        //         }
-        //         parentClass = classesAndTheirParents.get(parentClass);
-        //     }
-        //     if(!methodIsBeingOverriden){
-        //         offsets.getLast().addMember(methodName, getStorageRequired(null, true), true);
-        //     }
-        // }
+        }
+        else{
+            boolean methodIsBeingOverriden = false;
+            while(parentClass != null){
+                if(methods.get(new ClassAndIdentifier(parentClass, methodName)) != null){
+                    methodIsBeingOverriden = true;
+                    break;
+                }
+                parentClass = classesAndTheirParents.get(parentClass);
+            }
+            if(!methodIsBeingOverriden){
+                offsets.getLast().addMember(methodName, getStorageRequired(null, true), true);
+            }
+        }
         return null;
     }
 }
