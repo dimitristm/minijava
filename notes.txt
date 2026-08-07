@@ -46,10 +46,11 @@ todo: add the @Override
 todo: support this: "A a = new B();" when B extends A is correct, and the same applies when a method expects a parameter of type A and a B instance is given instead.
 todo: handle things using fields from their parent class
 todo: make methodinfo fields private with get functions
+todo: make stuff more generic by changing LinkedList to List etc wherever possible
 just gonna remove super.visit because it breaks regular functions in acceptable files (exits the scope and makes the functions think that variables aren't declared)
 
 how to get current line number in this tool? it will be usefull for exception messages
-what to do about the print statement? the language has no string type so what am i even supposed to check for
+print statement seems to need nothing in and of itself. in java we can print any object/primitive
 seems like assignment statements return the left value so see what checks need to be done with that 
 find every time we use the type of a variable found via Identifier visit function and check for null
 
@@ -89,8 +90,21 @@ todo: make identifier visit handle fields with the same name as a field in the p
 
 
 what if a parameter name gets reused as a local var
+ - that should be an error, redefinition in same scope
 
 --------
 
 void methods are apparently handled by grammar so maybe remove the check for that
-!= exists
+
+the identifier visitor that the Type visitor must call should return the string representation if it's a class, or the type if it's an identifier
+must distinguish between Type and Identifier
+solution:
+change identifier to only give the string representation and wherever i  .get(0) use a function instead
+
+return types (except null and list of one element)
+VarDeclaration -> type, id (can just insert to symboltable in the VarDeclaration visitor instead of having the callee do it, return null)
+Identifier -> type, id but the solution requires this to be just the string representation anyway
+ExpressionList returns list of the types of all expressions, make new visitor -> issue: but it relies on the logic of the current TypeCheckVisitor for each simple expression
+ -solution: new visitor just has the calle visitor as a field and uses it - done
+
+ TypecheckVisitor will only return strings
