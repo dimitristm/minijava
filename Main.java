@@ -31,9 +31,14 @@ public class Main {
                     System.err.println("SUCCESS: Program " + args[i] + " passed the semantic check.");
 
                     System.out.println("Offsets:");
-                    OffsetGeneratorVisitor ofvis = new OffsetGeneratorVisitor(declarations.getMethods(), declarations.getClassesAndTheirParents());
-                    root.accept(ofvis, null);
-                    ofvis.printOffsets();
+                    try{
+                        OffsetGeneratorVisitor ofvis = new OffsetGeneratorVisitor(declarations.getMethods(), declarations.getClassesAndTheirParents());
+                        root.accept(ofvis, null);
+                        ofvis.printOffsets();
+                    }
+                    catch(Exception e){
+                        System.out.println("Exception thrown while trying to get the offsets: " + e.getMessage());
+                    }
 
                 }
                 catch(ParseException ex){
