@@ -9,28 +9,42 @@ import java.util.*;
 
 public class Main {
     public static void main(String[] args) throws Exception {
-        if(args.length != 1){
-            System.err.println("Usage: java Main <inputFile>");
+        if(!(args.length >= 1)){
+            System.err.println("Usage: java Main <inputFile1>, <inputFile2>, ...");
             System.exit(1);
         }
 
         FileInputStream fis = null;
         try{
-            fis = new FileInputStream(args[0]);
-            MiniJavaParser parser = new MiniJavaParser(fis);
+            for(int i = 0; i <args.length; i++){
+                try{
+                    fis = new FileInputStream(args[i]);
+                    System.out.println("---Checking " + args[i] + ".");
+                    MiniJavaParser parser = new MiniJavaParser(fis);
 
-            Goal root = parser.Goal();
+                    Goal root = parser.Goal();
 
-            System.err.println("Program parsed successfully.");
+                    DeclarationCollectorVisitor declarations = new DeclarationCollectorVisitor();
+                    root.accept(declarations, null);
+                    TypecheckVisitor eval = new TypecheckVisitor(declarations.getMethods(), declarations.getClassesAndTheirParents());
+                    root.accept(eval, false);
+                    System.err.println("SUCCESS: Program " + args[i] + " passed the semantic check.");
 
-            DeclarationCollectorVisitor declarations = new DeclarationCollectorVisitor();
-            root.accept(declarations, null);
-            TypecheckVisitor eval = new TypecheckVisitor(declarations.getMethods(), declarations.getClassesAndTheirParents());
-            root.accept(eval, false);
+                    System.out.println("Offsets:");
+                    OffsetGeneratorVisitor ofvis = new OffsetGeneratorVisitor(declarations.getMethods(), declarations.getClassesAndTheirParents());
+                    root.accept(ofvis, null);
+                    ofvis.printOffsets();
+
+                }
+                catch(ParseException ex){
+                    System.out.println(ex.getMessage());
+                }
+                catch(SemanticCheckException ex){
+                    System.out.println("ERROR: " + ex.getMessage());
+                }
+            }
         }
-        catch(ParseException ex){
-            System.out.println(ex.getMessage());
-        }
+
         catch(FileNotFoundException ex){
             System.err.println(ex.getMessage());
         }
@@ -42,7 +56,12 @@ public class Main {
                 System.err.println(ex.getMessage());
             }
         }
-        System.err.println("Semantic check completed.");
+    }
+}
+
+class SemanticCheckException extends Exception{
+    SemanticCheckException(String message){
+        super(message);
     }
 }
 
@@ -75,7 +94,7 @@ class ClassAndIdentifier {
     @Override
     public boolean equals(Object c){
         ClassAndIdentifier y = (ClassAndIdentifier)c;
-        return this.className == y.className && this.identifier == y.identifier;
+        return this.className.equals(y.className) && this.identifier.equals(y.identifier);
     }
     @Override
     public int hashCode(){
@@ -90,7 +109,7 @@ class SymbolTable<K, V>{
         symbols.add(0, new HashMap<K, V>());
     }
     public void insert(K classAndIdentifier, V info) throws Exception{
-        if (symbols.get(0).containsKey(classAndIdentifier)) throw new Exception("An identifier was declared twice in the same scope.");
+        if (symbols.get(0).containsKey(classAndIdentifier)) throw new SemanticCheckException("An identifier was declared twice in the same scope.");
         symbols.get(0).put(classAndIdentifier, info);
     }
     //returns null if the specified symbol does not exist
@@ -221,7 +240,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
         //handle statements:
         n.f8.accept(this, false);
         //make sure the return type is correct
-        if (n.f1.accept(this, false) != n.f10.accept(this, false)) { throw new Exception("the return type of the function " + n.f2.accept(this, false) + " is wrong.");}
+        if (! n.f1.accept(this, false).equals(n.f10.accept(this, false))) { throw new SemanticCheckException("the return type of the function " + n.f2.accept(this, false) + " is wrong.");}
         variableSymbolTable.exit();
         return null;
     }
@@ -249,7 +268,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
             if (type != null) {return type;}
             currentClassToCheck = classesAndTheirParents.get(currentClassToCheck);
         }
-        throw new Exception("The variable " + varName + " has not been declared yet");
+        throw new SemanticCheckException("The variable " + varName + " has not been declared yet");
     }
     //string rep
     public String visit(Identifier n, Boolean expectingTypeOfIdentifier) throws Exception {
@@ -322,7 +341,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
         String type1 = node1.accept(this, false);
         String type2 = node2.accept(this, false);
         if (type1.equals(type2) && type1.equals(wantedType)) {return type1;}
-        else throw new Exception("Expected that the variables would be of type " + wantedType + " but they were not.");
+        else throw new SemanticCheckException("Expected that the variables would be of type " + wantedType + " but they were not.");
     }
     /**
      * f0 -> Clause()
@@ -372,7 +391,8 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
      * f3 -> "]"
      */
     public String visit(ArrayLookup n, Boolean expectingTypeOfIdentifier) throws Exception {
-        if (!n.f2.accept(this, false).equals("int")) { throw new Exception("Array lookup needs an int inside the brackets"); }
+        bothAreCompatibleType(n.f2.accept(this,false), "int");
+        // if (!n.f2.accept(this, false).equals("int")) { throw new SemanticCheckException("Array lookup needs an int inside the brackets"); }
         String type = n.f0.accept(this, false);
         return type.substring(0, type.length() - 2);//remove the last 2 characters ([])
     }
@@ -383,7 +403,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
      */
     public String visit(ArrayLength n, Boolean expectingTypeOfIdentifier) throws Exception {
         String exp_type = n.f0.accept(this, false);
-        if (!exp_type.endsWith("[]")) { throw new Exception("tried to get array length of something that is not an array"); }
+        if (!exp_type.endsWith("[]")) { throw new SemanticCheckException("tried to get array length of something that is not an array"); }
         return "int";
     }
     /**
@@ -400,14 +420,20 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
         // if (!classesAndTheirParents.containsKey(className)) {throw new Exception();} 
         String methodName = n.f2.accept(this, false);
 
-        //make sure the method exists in the class (but what about inherited methods? must check those too)
-        MethodInfo methodInfo = methods.get(new ClassAndIdentifier(className, methodName));
-        if (methodInfo == null) {throw new Exception("method was called on an object that doesn't have that method");}
+        //make sure the method exists in the class or a parent class
+        String currentClassToCheck = className;
+        MethodInfo methodInfo = methods.get(new ClassAndIdentifier(currentClassToCheck, methodName));
+        while(currentClassToCheck != null){
+            methodInfo = methods.get(new ClassAndIdentifier(currentClassToCheck, methodName));
+            if (methodInfo != null) {break;}
+            currentClassToCheck = classesAndTheirParents.get(currentClassToCheck);
+        }
+        if (methodInfo == null) {throw new SemanticCheckException("method " + methodName + " was called on an object " + "(of type " + className + ")" +" that doesn't have that method");}
 
         //make sure the expression list matches the methodInfo, ? needed because f.f4.accept returns false if it's not present but we instead need an empty list to represent no falsements
         LinkedList<String> expressionList = n.f4.present() ? n.f4.accept(new GetExpressionListTypesVisitor(this), null) : new LinkedList<String>();
 
-        if (! (expressionList.size() == methodInfo.argumentTypes.size()) ) {throw new Exception("Incorrect amount of arguments in method call");}
+        if (! (expressionList.size() == methodInfo.argumentTypes.size()) ) {throw new SemanticCheckException("Incorrect amount of arguments in method call");}
         for(int i = 0; i < expressionList.size(); i++){
             bothAreCompatibleType(methodInfo.argumentTypes.get(i), expressionList.get(i));
         }
@@ -466,7 +492,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
        return n.f0.accept(this, false);
     }
     private String checkNodeForTypeAndReturnAnother (Node node, String typeToCheckFor, String typeToReturn) throws Exception{
-        if (!node.accept(this,false).equals(typeToCheckFor)) {throw new Exception("wrong type, was supposed to be " + typeToCheckFor);}
+        if (!node.accept(this,false).equals(typeToCheckFor)) {throw new SemanticCheckException("wrong type, was supposed to be " + typeToCheckFor);}
         return typeToReturn;
     }
     /**
@@ -498,7 +524,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
     public String visit(AllocationExpression n, Boolean expectingTypeOfIdentifier) throws Exception {
         String className = n.f1.accept(this, false);
         if(!classesAndTheirParents.containsKey(className)){
-            throw new Exception("Allocation expression did not contain a declared class, " + className + " is not recognised");
+            throw new SemanticCheckException("Allocation expression did not contain a declared class, " + className + " is not recognised");
         }
         return className;//in this case, identifier is a class name, not a func or var so this is right
     }   
@@ -532,7 +558,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
 
     //check that type2 can be assigned to type 1, if not, throw an exception
     private void bothAreCompatibleType(String type1, String type2) throws Exception{
-        if (type1 == null || type2 == null) {throw new Exception("could not find type, probably not declared yet");}//?
+        if (type1 == null || type2 == null) {throw new SemanticCheckException("could not find type, probably not declared yet");}//?
         if (type1.equals(type2)) {return;}
         // check if type2 is derived by type1, if yes, the assignment is correct
         String ancestorOfType2 = classesAndTheirParents.get(type2);
@@ -540,7 +566,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
             if (ancestorOfType2.equals(type1)) {return;}
             ancestorOfType2 = classesAndTheirParents.get(ancestorOfType2);
         }
-        throw new Exception("Expected that two things would be of the same type");
+        throw new SemanticCheckException("Expected that two things would be of the same type");
     }
    /**
     * f0 -> Identifier()
@@ -564,10 +590,10 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
     public String visit(ArrayAssignmentStatement n, Boolean expectingTypeOfIdentifier) throws Exception {
         String IDtype = n.f0.accept(this, true);
         String rType = n.f5.accept(this, false);
-        if (IDtype == null) { throw new Exception("Tried to do an array assignment Statement on something that has not been declared");}
-        if (!IDtype.endsWith("[]")) {throw new Exception("tried to do an array assignment statement on a non-array");}
-        if (n.f2.accept(this, false) != "int") { throw new Exception("Tried to do an array assignment Statement but the there wasn't an int inside the brackets");}
-        if (!IDtype.equals(rType + "[]")) {throw new Exception("In an array assignment statement, the right hand value is not of the right type");}
+        if (IDtype == null) { throw new SemanticCheckException("Tried to do an array assignment Statement on something that has not been declared");}
+        if (!IDtype.endsWith("[]")) {throw new SemanticCheckException("tried to do an array assignment statement on a non-array");}
+        if (!n.f2.accept(this, false).equals("int")) { throw new SemanticCheckException("Tried to do an array assignment Statement but the there wasn't an int inside the brackets");}
+        if (!IDtype.equals(rType + "[]")) {throw new SemanticCheckException("In an array assignment statement, the right hand value is not of the right type");}
         return rType; //does it make any sense to return this? we don't have complex statements that take the return type of other statements i think so maybe this is useless
     }   
     /**
@@ -580,7 +606,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
      * f6 -> Statement()
      */
     public String visit(IfStatement n, Boolean expectingTypeOfIdentifier) throws Exception {
-       if (n.f2.accept(this, false) != "boolean") {throw new Exception("if statement must have a boolean type in its parentheses");}
+       if (!n.f2.accept(this, false).equals("boolean")) {throw new SemanticCheckException("if statement must have a boolean type in its parentheses");}
        n.f4.accept(this, false);
        n.f6.accept(this, false);
        return null;
@@ -593,13 +619,25 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
      * f4 -> Statement()
      */
     public String visit(WhileStatement n, Boolean expectingTypeOfIdentifier) throws Exception {
-       if (n.f2.accept(this, false) != "boolean") {throw new Exception("while statement must have a boolean type in its parentheses");}
+       if (!n.f2.accept(this, false).equals("boolean")) {throw new SemanticCheckException("while statement must have a boolean type in its parentheses");}
        n.f4.accept(this, false);
        return null;
-    }   
+    }
+       /**
+    * f0 -> "System.out.println
+    * f1 -> "("
+    * f2 -> Expression()
+    * f3 -> ")"
+    * f4 -> ";"
+    */
+    public String visit(PrintStatement n, Boolean expectingTypeOfIdentifier) throws Exception {
+        if (!n.f2.accept(this, false).equals("int")) {throw new SemanticCheckException("print statement can only take int types");}
+        return null;
+    }
+
 }
 
-class DeclarationCollectorVisitor extends GJDepthFirst<String, Void>{
+class DeclarationCollectorVisitor extends StringRepresentationVisitor{
     private HashMap<ClassAndIdentifier, MethodInfo> methods = new HashMap<ClassAndIdentifier, MethodInfo>(); // why would this be a symbol table? it would always have one layer that is never exited
     private HashMap<String, String> classesAndTheirParents = new HashMap<String, String>(); // merge into one with the above? would it make the algo for checking overloaded functions slower or faster?
     private String currentClass;
@@ -634,11 +672,6 @@ class DeclarationCollectorVisitor extends GJDepthFirst<String, Void>{
         return null;
     }
 
-    // returns the name, it will be a type if it's used to find the name of a class
-    public String visit(Identifier n, Void argu) throws Exception {
-        return n.f0.toString();
-    }
-
    /**
     * f0 -> "class"
     * f1 -> Identifier()
@@ -649,7 +682,7 @@ class DeclarationCollectorVisitor extends GJDepthFirst<String, Void>{
     */
    public String visit(ClassDeclaration n, Void argu) throws Exception {
         this.currentClass = n.f1.accept(this, null);
-        if (classesAndTheirParents.containsKey(currentClass)) {throw new Exception("This class has already been declared elsewhere: " + currentClass); }
+        if (classesAndTheirParents.containsKey(currentClass)) {throw new SemanticCheckException("This class has already been declared elsewhere: " + currentClass); }
         classesAndTheirParents.put(currentClass, null);
         n.f4.accept(this, argu);
         return null;
@@ -668,8 +701,8 @@ class DeclarationCollectorVisitor extends GJDepthFirst<String, Void>{
    public String visit(ClassExtendsDeclaration n, Void argu) throws Exception {
         this.currentClass = n.f1.accept(this, null);
         String parentClass = n.f3.accept(this, null);
-        if (classesAndTheirParents.containsKey(currentClass)) {throw new Exception("This class has already been declared elsewhere: " + currentClass); }
-        if (!classesAndTheirParents.containsKey(parentClass)) { throw new Exception("Class " + currentClass + " tried to inherit from a class called " + parentClass + ", but that class had not been declared yet or has no declaration at all");}
+        if (classesAndTheirParents.containsKey(currentClass)) {throw new SemanticCheckException("This class has already been declared elsewhere: " + currentClass); }
+        if (!classesAndTheirParents.containsKey(parentClass)) { throw new SemanticCheckException("Class " + currentClass + " tried to inherit from a class called " + parentClass + ", but that class had not been declared yet or has no declaration at all");}
         classesAndTheirParents.put(currentClass, parentClass);
         n.f6.accept(this, argu);
         return null;
@@ -694,38 +727,22 @@ class DeclarationCollectorVisitor extends GJDepthFirst<String, Void>{
         String methodName = n.f2.accept(this, argu);
         LinkedList<String> argTypes = n.f4.present() ? n.f4.accept(new FormalParameterVisitor(), null).argumentTypes : new LinkedList<String>();
         MethodInfo methodInfo = new MethodInfo(n.f1.accept(this, argu), argTypes);
-        if (methodInfo.returnType == "void") {throw new Exception("A void method was declared. There are no void methods in this language.");} 
+        if (methodInfo.returnType.equals("void")) {throw new SemanticCheckException("A void method was declared. There are no void methods in this language.");} //todo: remove since it is caught by parser?
         // first check the current class to see if this method name has already been used and error if it has
         // then check parent classes to see if the name has been used in which case they must have same methodInfo
-        if (methods.containsKey(new ClassAndIdentifier(currentClass, methodName))) { throw new Exception("Declared the method " + methodName + " twice in one class");}
+        if (methods.containsKey(new ClassAndIdentifier(currentClass, methodName))) { throw new SemanticCheckException("Declared the method " + methodName + " twice in one class");}
         String currentClassToCheckForWrongOverload = classesAndTheirParents.get(currentClass);
         while(currentClassToCheckForWrongOverload != null){
             MethodInfo inheritedMethodInfo = methods.get(new ClassAndIdentifier(currentClassToCheckForWrongOverload, methodName));
             if (inheritedMethodInfo != null){
                 if (inheritedMethodInfo.equals(methodInfo)) { break; }
-                else { throw new Exception("Incorrect overload for method " + methodName + " in class " + currentClass);}
+                else { throw new SemanticCheckException("Incorrect overload for method " + methodName + " in class " + currentClass);}
             }
             currentClassToCheckForWrongOverload = classesAndTheirParents.get(currentClassToCheckForWrongOverload);
         }
         methods.put(new ClassAndIdentifier(currentClass, methodName), methodInfo);
         return null;
     }
-
-   public String visit(BooleanArrayType n, Void argu) throws Exception {
-       return "boolean[]";
-   }
-
-   public String visit(IntegerArrayType n, Void argu) throws Exception {
-      return "int[]";
-   }
-
-   public String visit(BooleanType n, Void argu) throws Exception {
-      return "boolean";
-   }
-
-   public String visit(IntegerType n, Void argu) throws Exception {
-      return "int";
-   }
 }
 
 class GetExpressionListTypesVisitor extends GJDepthFirst<LinkedList<String>, Void>{
@@ -782,11 +799,160 @@ class StringRepresentationVisitor extends GJDepthFirst<String, Void>{
    public String visit(IntegerType n, Void argu){
       return "int";
    }
-    // returns the name, it will be a type if it's used to find the name of a class
     public String visit(Identifier n, Void argu){
         return n.f0.toString();
     }
-} //todo: use this to get rid of repetition in other visitors
+}
+
+class MemberAndOffset{
+    MemberAndOffset(String memberName, int offset){
+        this.memberName = memberName;
+        this.offset = offset;
+    }
+    public String memberName;
+    public int offset;
+}
+
+class ClassOffsets{
+    ClassOffsets(String className){
+        this.className = className;
+    }
+    ClassOffsets(String className, int nextFieldOffsetValueOfParent, int nextMethodOffsetValueOfParent){
+        this.className = className;
+        this.nextFieldOffsetValue = nextFieldOffsetValueOfParent;
+        this.nextMethodOffsetValue = nextMethodOffsetValueOfParent;
+    }
+    public String className;
+    public LinkedList<MemberAndOffset> offsets = new LinkedList<MemberAndOffset>();
+    private int nextFieldOffsetValue;
+    private int nextMethodOffsetValue;
+    public int getNextFieldOffsetValue(){
+        return this.nextFieldOffsetValue;
+    }
+    public int getNextMethodOffsetValue(){
+        return this.nextMethodOffsetValue;
+    }
+    public void addMember(String memberName, int storageRequired, boolean isMethod){
+        if(isMethod){
+            offsets.add(new MemberAndOffset(memberName, nextMethodOffsetValue));
+            nextMethodOffsetValue += storageRequired;
+        }
+        else{
+            offsets.add(new MemberAndOffset(memberName, nextFieldOffsetValue));
+            nextFieldOffsetValue += storageRequired;
+        }
+    }
+    public void printOffsets(){
+        for (MemberAndOffset memberAndOffset : offsets){
+            System.out.println(className + "." + memberAndOffset.memberName + " : " + memberAndOffset.offset);
+        }
+    }
+}
+class OffsetGeneratorVisitor extends StringRepresentationVisitor{
+    OffsetGeneratorVisitor(HashMap<ClassAndIdentifier, MethodInfo> methods, HashMap<String, String> classesAndTheirParents){
+        this.classesAndTheirParents = classesAndTheirParents;
+        this.methods = methods;
+    }
+    private LinkedList<ClassOffsets> offsets = new LinkedList<ClassOffsets>();
+    private String currentClass;
+    private HashMap<String, Integer> storageRequired = new HashMap<String, Integer>();
+
+    private HashMap<String, String> classesAndTheirParents = new HashMap<String, String>(); // merge into one with the above? would it make the algo for checking overloaded functions slower or faster?
+    private HashMap<ClassAndIdentifier, MethodInfo> methods = new HashMap<ClassAndIdentifier, MethodInfo>(); // why would this be a symbol table? it would always have one layer that is never exited
+
+    OffsetGeneratorVisitor(){
+        storageRequired.put("int", 4);
+        storageRequired.put("boolean", 1);
+        storageRequired.put("int[]", 8);
+        storageRequired.put("boolean[]", 8);
+    }
+    private Integer getStorageRequired(String type, boolean isFunction){
+        if (isFunction) { return 8; } //it is a pointer
+        Integer storage = storageRequired.get(type);
+        if (storage == null) { return 8; } //it is a class type, so a pointer
+        return storage;
+    }
+    public void printOffsets(){
+        for(ClassOffsets co : offsets){
+            co.printOffsets();
+        }
+    }
+    public String visit(MainClass n, Void argu) throws Exception{
+        offsets.add(new ClassOffsets(n.f1.accept(this,null)));
+        return null;
+    }
+    /**
+    * f0 -> Type()
+    * f1 -> Identifier()
+    */
+    public String visit(VarDeclaration n, Void argu) throws Exception {
+        String type = n.f0.accept(this, null);
+        offsets.getLast().addMember(n.f1.accept(this, null), getStorageRequired(type, false), false);
+        return null;
+    }
+   /**
+    * f0 -> "class"
+    * f1 -> Identifier()
+    * f2 -> "{"
+    * f3 -> ( VarDeclaration() )*
+    * f4 -> ( MethodDeclaration() )*
+    * f5 -> "}"
+    */
+   public String visit(ClassDeclaration n, Void argu) throws Exception {
+        currentClass = n.f1.accept(this, null);
+        offsets.add(new ClassOffsets(currentClass));
+        n.f3.accept(this, null);
+        n.f4.accept(this, null);
+        return null;
+   }
+
+   /**
+    * f1 -> Identifier()
+    * f2 -> "extends"
+    * f3 -> Identifier()
+    * f5 -> ( VarDeclaration() )*
+    * f6 -> ( MethodDeclaration() )*
+    */
+   public String visit(ClassExtendsDeclaration n, Void argu) throws Exception {
+        currentClass = n.f1.accept(this, null);
+        String parentClass = n.f3.accept(this, null);
+        for (ClassOffsets cos : offsets){
+            if (cos.className.equals(parentClass)){
+                offsets.add(new ClassOffsets(currentClass, cos.getNextFieldOffsetValue(), cos.getNextMethodOffsetValue()));
+                break;
+            }
+        }
+        n.f5.accept(this, null);
+        n.f6.accept(this, null);
+        return null;
+   }
+
+   /**
+    * f2 -> Identifier()
+    */
+    public String visit(MethodDeclaration n, Void argu) throws Exception {
+        // String parentClass = classesAndTheirParents.get(currentClass);
+        String methodName = n.f2.accept(this, null);
+        // if(parentClass == null){
+            offsets.getLast().addMember(methodName, getStorageRequired(null, true), true);
+        // }
+        // else{
+        //     boolean methodIsBeingOverriden = false;
+        //     while(parentClass != null){
+        //         if(methods.get(new ClassAndIdentifier(parentClass, methodName)) != null){
+        //             methodIsBeingOverriden = true;
+        //             break;
+        //         }
+        //         parentClass = classesAndTheirParents.get(parentClass);
+        //     }
+        //     if(!methodIsBeingOverriden){
+        //         offsets.getLast().addMember(methodName, getStorageRequired(null, true), true);
+        //     }
+        // }
+        return null;
+    }
+}
+
 
 class FormalParamListData{
     public LinkedList<String> argumentTypes = new LinkedList<String>();

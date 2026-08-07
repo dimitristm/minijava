@@ -24,7 +24,6 @@ and if so, just use the previous symboltable for methods too)
 
 f0 -> (x)* means that f0 is a NodeListOptional with elements of type x which you can iterate over with elementAt() and size()
 
-does main method go into the method HashTable? is there a point? i presume other methods cannot be called main so it doesn't matter
 
 do i have to make sure that "args" is not used since minijava says they should not be used?
 "A MiniJava program is a file that begins with a special class that contains the main method and specific ***arguments that are not used***."
@@ -33,33 +32,24 @@ but what if somebody creates a new variable with the name args? (probably nothin
 
 MethodInfo must have the argumet types in correct order and so must ExpressionList
 
-clause not returning a type when parsing identifier:
-maybe make Identifier return the type of the identifier in index 0 (if the identifier exists, else null) and the name in index 1
-
-todo: rename ret to describe what is in the string list for each visit function
 todo: even better error messages, change the type of the exception that i throw
-todo: collect class declerations first to make sure that fields and local variables are of a real type as well as to make sure the functions called exist, i'll do this with a second visitor class
-    and have it give the methods and classesAndTheirParents structures to the first one
 todo: find some way to make the symboltable print the value (maybe just undo the generics because i won't need them anyway, but hopefully not because i like them)
-todo: make everything in the first visitor return a class with type and ID or null to make things objectively better because right now im basically bypassing the type system
 todo: add the @Override
-todo: handle things using fields from their parent class
-todo: make methodinfo fields private with get functions
 todo: make stuff more generic by changing LinkedList to List etc wherever possible
-todo: make bothAreSpecificType take in strings instead of nodes, catch the exceptions to print better errors, make ArrayLookup visit method use it too
 todo?: make the formalParameterVisitor add the parameters to the symbol table instead of giving the info to the calle?
-todo: checkNodeForTypeAndReturnAnother seems pretty useless now, remove?
-just gonna remove super.visit because it breaks regular functions in acceptable files (exits the scope and makes the functions think that variables aren't declared)
-
+todo: Main can be called by other functions and you can make multiple instances of the main class in java. how about minijava and is mine correct?
+    old: does main method go into the method HashTable? is there a point? i presume other methods cannot be called main so it doesn't matter
 how to get current line number in this tool? it will be usefull for exception messages
+todo: bothAreCompatibleType not declared yet error -> does it really get triggered correctly? probs not but i'm not touching it cause it's a risk
+
+todo: the offsets
+
+credit https://stackoverflow.com/questions/4036191/sources-from-subdirectories-in-makefile
+if i keep the makefile test thing at the end (probably shouldn't keep because they must have their own tools anyway)
+
 print statement seems to need nothing in and of itself. in java we can print any object/primitive
-seems like assignment statements return the left value so see what checks need to be done with that 
-find every time we use the type of a variable found via Identifier visit function and check for null
-
----no declarations inside the paren of an if
----no declarations inside ifs and whiles and blocks etc
-
-can main be called by other functions?
+seems like assignment statements return the left value in java but that has no meaning in minijava 
+find every time we use the type of a variable found via Identifier visit function and remove null checks because it can't return null, it throws an exception
 
 all this stuff is checked in the collector visitor:
 populating classesAndTheirParents:
@@ -72,27 +62,11 @@ populating methods:
     make sure it does not have a void return type, if it does, error
     add the needed information to methods
 
-need a list of string for formalparameter list, make new visitor classes every time we need another return type?
-
-class MethodInfo{ //todo: implement equals() and use it for checking that a function isn't overloaded because that's not part of minijava
-    public String returnType;
-    public LinkedList<String> argumentTypes; //todo: arraylist because i could figure it out all at once and so it won't have to be resized?
-}
-    public HashMap<ClassAndIdentifier, MethodInfo> getMethods(){ return this.methods; }
-
-
 inheritied fields handled by not exiting when class ends, only enter and exit on methods
 make more visitors to tidy up code and make other visitors inherit/ use it (like a simple visitor that returns types of primitives or declarations)
 tidy up more: make first visitor return just the String that represents the type, if Identifier returns null type it doesn't exist so exception, if we are declaring the identifier then call the StringRepVisitor instead
 
 can void be an argument type to a method?
-
-
-todo: make identifier visit handle fields with the same name as a field in the parent class (trying this gives error: Exception in thread "main" java.lang.NullPointerException: Cannot invoke "String.equals(Object)" because "<local4>" is null)
-
-
-what if a parameter name gets reused as a local var
- - that should be an error, redefinition in same scope
 
 --------
 
@@ -136,16 +110,21 @@ not supposed to use reflection
 check for uses of TypecheckVisitor, correct the argument
 
 TypeCheckVisitor takes boolean argument, true = parse identifier as a variable and return the type
-kind of weird to use arguments just for this one thing but what other (simple) way is there?
 
 could also use a field as the expectingTypeOfIdentifier var, but that's state which is more complex to get right, looks less hacky though (?)
 expectingTypeOfIdentifier is not really the best name because we may also get type of a literal in PrimaryExpression visitor func
 
 getTypeOfVariable already checks whether the var exists as an exception, handle the exception where the null checks were for better error messages
-apparently can't have boolean as the argument type
 
+TEST 35
+---Checking ../minijava-examples-new/minijava-error-extra/test35.java.
+SUCCESS: Program ../minijava-examples-new/minijava-error-extra/test35.java passed the semantic check.
+what am i supposed to do? there is no real problem with printing that in java, and nothing is said about it in the exericise
 
-todo: support this: "A a = new B();" when B extends A is correct, and the same applies when a method expects a parameter of type A and a B instance is given instead.
--change: bothAreSameType, methodInfo equals but not when checking for overload
+double check != and == vs .equals in strings
 
-lines 530 409
+override func -> no new offset
+
+do something about inheriting/making instances of main class
+
+can you override the main function of a class?
