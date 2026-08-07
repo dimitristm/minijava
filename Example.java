@@ -5,9 +5,10 @@ class Example {
         int f;
         int x;
         // i = 10;
-        // boolean x = true;
+        // boolean x;
         f = 10 + 10;
         f = n + x;
+        f = 1 * (n);
         // x = i + n;
     }
 }

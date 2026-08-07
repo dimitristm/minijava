@@ -77,7 +77,8 @@ class SymbolTable<K, V>{
     public void enter(){
         symbols.add(0, new HashMap<K, V>());
     }
-    public void insert(K classAndIdentifier, V info){
+    public void insert(K classAndIdentifier, V info) throws Exception{
+        if (!(this.lookup(classAndIdentifier) == null)) throw new Exception("An identifier was used twice in the same scope.");
         symbols.get(0).put(classAndIdentifier, info);
     }
     //returns null if the specified symbol does not exist
@@ -148,20 +149,20 @@ class Visitor extends GJDepthFirst<LinkedList<String>, Void>{
     */
     // index 0 = type, index 1 = identifier name
     public LinkedList<String> visit(VarDeclaration n, Void argu) throws Exception {
-        LinkedList<String> ret = new LinkedList<String>();
-        ret.add(n.f0.accept(this, null).get(0));
-        ret.add(n.f1.accept(this, null).get(1));
-        return ret;
+        LinkedList<String> typeAndID = new LinkedList<String>();
+        typeAndID.add(n.f0.accept(this, null).get(0));
+        typeAndID.add(n.f1.accept(this, null).get(1));
+        return typeAndID;
     }
 
     // index 0 = type of identifier if it already exists, null if it doesn't
     // index 1 = name of the identifier
     public LinkedList<String> visit(Identifier n, Void argu) throws Exception {
-        LinkedList<String> ret = new LinkedList<String>();
+        LinkedList<String> typeIfItExistsAndID = new LinkedList<String>();
         String IDname = n.f0.toString();
-        ret.add(variableSymbolTable.lookup(new ClassAndIdentifier(currentClass, IDname)));
-        ret.add(IDname);
-        return ret;
+        typeIfItExistsAndID.add(variableSymbolTable.lookup(new ClassAndIdentifier(currentClass, IDname)));
+        typeIfItExistsAndID.add(IDname);
+        return typeIfItExistsAndID;
     }
 //------------getting types------------
    /**
@@ -232,12 +233,13 @@ class Visitor extends GJDepthFirst<LinkedList<String>, Void>{
     public LinkedList<String> visit(Expression n, Void argu) throws Exception {
         return n.f0.accept(this, argu);
     }
+    //returns the type of the expressions in a list of one string, or throws an exception if they're not the same
     private LinkedList<String> bothAreSpecificType(Node node1, Node node2, String wantedType) throws Exception{
         LinkedList<String> ret = new LinkedList<String>();
         String type1 = node1.accept(this, null).get(0);
         String type2 = node2.accept(this, null).get(0);
         if (type1.equals(type2) && type1.equals(wantedType)) {ret.add(type1); return ret;}
-        else throw new Exception();
+        else throw new Exception("Expected that the variables would be of type " + wantedType + " but they were not.");
     }
     /**
      * f0 -> Clause()
@@ -288,7 +290,7 @@ class Visitor extends GJDepthFirst<LinkedList<String>, Void>{
      */
     public LinkedList<String> visit(ArrayLookup n, Void argu) throws Exception {
         LinkedList<String> type = new LinkedList<String>();
-        if (!n.f2.accept(this, argu).get(0).equals("int")) { throw new Exception(); }
+        if (!n.f2.accept(this, argu).get(0).equals("int")) { throw new Exception("Array lookup needs an int inside the brackets"); }
         type.add(n.f0.accept(this, argu).get(0));
         return type;
     }
@@ -300,7 +302,7 @@ class Visitor extends GJDepthFirst<LinkedList<String>, Void>{
     public LinkedList<String> visit(ArrayLength n, Void argu) throws Exception {
         LinkedList<String> type = new LinkedList<String>();
         String exp_type = n.f0.accept(this, argu).get(0);
-        if (!exp_type.endsWith("[]")) { throw new Exception(); }
+        if (!exp_type.endsWith("[]")) { throw new Exception("tried to get array length of something that is not an array"); }
         type.add(exp_type);
         return type;
     }
@@ -320,11 +322,11 @@ class Visitor extends GJDepthFirst<LinkedList<String>, Void>{
 
         //make sure the method exists in the class (but what about inherited methods? must check those too)
         MethodInfo methodInfo = methods.get(new ClassAndIdentifier(className, methodName));
-        if (methodInfo == null) {throw new Exception();}
+        if (methodInfo == null) {throw new Exception("Void method was called on an object that doesn't have that method");}
 
         //make sure the expression list matches the methodInfo
         LinkedList<String> expressionList = n.f4.accept(this, argu);
-        if (!expressionList.equals(methodInfo.argumentTypes)) {throw new Exception();}
+        if (!expressionList.equals(methodInfo.argumentTypes)) {throw new Exception("The types of the arguments given to a method do not match its signature");}
 
         //return our return type
         LinkedList<String> returnType = new LinkedList<String>();
@@ -419,6 +421,12 @@ class Visitor extends GJDepthFirst<LinkedList<String>, Void>{
     public LinkedList<String> visit(ArrayAllocationExpression n, Void argu) throws Exception {
        return n.f0.accept(this, argu);
     }
+    private LinkedList<String> checkNodeForTypeAndReturnAnother (Node node, String typeToCheckFor, String typeToReturn) throws Exception{
+        if (!node.accept(this,null).equals(typeToCheckFor)) {throw new Exception("wrong type, was supposed to be " + typeToCheckFor);}
+        LinkedList<String> type = new LinkedList<String>();
+        type.add(typeToReturn);
+        return type;
+    }
     /**
      * f0 -> "new"
      * f1 -> "boolean"
@@ -427,10 +435,7 @@ class Visitor extends GJDepthFirst<LinkedList<String>, Void>{
      * f4 -> "]"
      */
     public LinkedList<String> visit(BooleanArrayAllocationExpression n, Void argu) throws Exception {
-        if (!n.f3.accept(this,argu).equals("int")) {throw new Exception();}
-        LinkedList<String> type = new LinkedList<String>();
-        type.add("boolean[]");
-        return type;
+        return checkNodeForTypeAndReturnAnother(n.f3, "int", "boolean[]");
     }   
     /**
      * f0 -> "new"
@@ -440,10 +445,7 @@ class Visitor extends GJDepthFirst<LinkedList<String>, Void>{
      * f4 -> "]"
      */
     public LinkedList<String> visit(IntegerArrayAllocationExpression n, Void argu) throws Exception {
-        if (!n.f3.accept(this, argu).equals("int")) {throw new Exception();}
-        LinkedList<String> type = new LinkedList<String>();
-        type.add("int[]");
-        return type; // todo: extract to new method with above and below and NotExpression
+        return checkNodeForTypeAndReturnAnother(n.f3, "int", "int[]");
     }   
     /**
      * f0 -> "new"
@@ -452,20 +454,14 @@ class Visitor extends GJDepthFirst<LinkedList<String>, Void>{
      * f3 -> ")"
      */
     public LinkedList<String> visit(AllocationExpression n, Void argu) throws Exception {
-        if (!n.f3.accept(this, argu).equals("int")) {throw new Exception();}
-        LinkedList<String> type = new LinkedList<String>();
-        type.add("boolean[]");
-        return type;
+        return checkNodeForTypeAndReturnAnother(n.f3, "int", "boolean[]");
     }   
     /**
      * f0 -> "!"
      * f1 -> Clause()
      */
     public LinkedList<String> visit(NotExpression n, Void argu) throws Exception {
-        if(!n.f1.accept(this, argu).equals("boolean")) {throw new Exception();}
-        LinkedList<String> type = new LinkedList<String>();
-        type.add("boolean");
-        return type;
+        return checkNodeForTypeAndReturnAnother(n.f1, "boolean", "boolean");
     }   
     /**
      * f0 -> "("
@@ -475,4 +471,110 @@ class Visitor extends GJDepthFirst<LinkedList<String>, Void>{
     public LinkedList<String> visit(BracketExpression n, Void argu) throws Exception {
         return n.f1.accept(this, argu);
     }
+//statements
+   /**
+    * f0 -> Block()
+    *       | AssignmentStatement()
+    *       | ArrayAssignmentStatement()
+    *       | IfStatement()
+    *       | WhileStatement()
+    *       | PrintStatement()
+    */
+   public LinkedList<String> visit(Statement n, Void argu) throws Exception {
+      return n.f0.accept(this, argu);
+   }
+
+   /**
+    * f0 -> "{"
+    * f1 -> ( Statement() )*
+    * f2 -> "}"
+    */
+   public LinkedList<String> visit(Block n, Void argu) throws Exception {
+      LinkedList<String> _ret=null;
+      n.f0.accept(this, argu);
+      n.f1.accept(this, argu);
+      n.f2.accept(this, argu);
+      return _ret;
+   }
+
+   /**
+    * f0 -> Identifier()
+    * f1 -> "="
+    * f2 -> Expression()
+    * f3 -> ";"
+    */
+    private LinkedList<String> bothAreSameType(Node node1, Node node2) throws Exception{
+        LinkedList<String> ret = new LinkedList<String>();
+        String type1 = node1.accept(this, null).get(0);
+        String type2 = node2.accept(this, null).get(0);
+        if (type1.equals(type2)) {ret.add(type1); return ret;}
+        else throw new Exception("Expected that two things would be of the same type");
+    }
+    public LinkedList<String> visit(AssignmentStatement n, Void argu) throws Exception {
+         return bothAreSameType(n.f0, n.f2);
+    }   
+    /**
+     * f0 -> Identifier()
+     * f1 -> "["
+     * f2 -> Expression()
+     * f3 -> "]"
+     * f4 -> "="
+     * f5 -> Expression()
+     * f6 -> ";"
+     */
+    public LinkedList<String> visit(ArrayAssignmentStatement n, Void argu) throws Exception {
+        LinkedList<String> returnType = new LinkedList<String>();
+        String IDtype = n.f0.accept(this, argu).get(0);
+        String rType = n.f5.accept(this, argu).get(0);
+        returnType.add(rType);
+        if (IDtype == null) { throw new Exception("Tried to do an array assignment Statement on something that has not been declared");}
+        if (!IDtype.endsWith("[]")) {throw new Exception("tried to do an array assignment statement on a non-array");}
+        if (!(n.f2.accept(this, argu).get(0) == "int")) { throw new Exception("Tried to do an array assignment Statement but the there wasn't an int inside the brackets");}
+        if (!IDtype.equals(rType + "[]")) {throw new Exception("In an array assignment statement, the right hand value is not of the right type");}
+        return returnType;
+    }   
+    /**
+     * f0 -> "if"
+     * f1 -> "("
+     * f2 -> Expression()
+     * f3 -> ")"
+     * f4 -> Statement()
+     * f5 -> "else"
+     * f6 -> Statement()
+     */
+    public LinkedList<String> visit(IfStatement n, Void argu) throws Exception {
+       if (!(n.f2.accept(this, argu).get(0) == "boolean")) {throw new Exception("if statement must have a boolean type in its parentheses");}
+       n.f4.accept(this, argu);
+       n.f6.accept(this, argu);
+       return null;
+    }   
+    /**
+     * f0 -> "while"
+     * f1 -> "("
+     * f2 -> Expression()
+     * f3 -> ")"
+     * f4 -> Statement()
+     */
+    public LinkedList<String> visit(WhileStatement n, Void argu) throws Exception {
+       if (!(n.f2.accept(this, argu).get(0) == "boolean")) {throw new Exception("while statement must have a boolean type in its parentheses");}
+       n.f4.accept(this, argu);
+       return null;
+    }   
+    /**
+     * f0 -> "System.out.println"
+     * f1 -> "("
+     * f2 -> Expression()
+     * f3 -> ")"
+     * f4 -> ";"
+     */
+    public LinkedList<String> visit(PrintStatement n, Void argu) throws Exception {
+       LinkedList<String> _ret=null;
+       n.f0.accept(this, argu);
+       n.f1.accept(this, argu);
+       n.f2.accept(this, argu);
+       n.f3.accept(this, argu);
+       n.f4.accept(this, argu);
+       return _ret;
+    }
+
 }

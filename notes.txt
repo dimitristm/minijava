@@ -38,8 +38,19 @@ maybe make Identifier return the type of the identifier in index 0 (if the ident
 
 todo: rename ret to describe what is in the string list for each visit function
 todo: check for Identifiers declared more than once in same scope
-todo: better error messages
+todo: even better error messages, change the type of the exception that i throw
 todo: collect class declerations first to make sure that fields and local variables are of a real type as well as to make sure the functions called exist, i'll do this with a second visitor class
     and have it give the methods and classesAndTheirParents structures to the first one
+todo: find some way to make the symboltable print the value (maybe just undo the generics because i won't need them anyway, but hopefully not because i like them)
+todo: handle statements
+todo: make everything in the first visitor return a class with type and ID or null to make things objectively better because right now im basically bypassing the type system
 
 just gonna remove super.visit because it breaks regular functions in acceptable files (exits the scope and makes the functions think that variables aren't declared)
+
+how to get current line number in this tool? it will be usefull for exception messages
+what to do about the print statement? the language has no string type so what am i even supposed to check for
+seems like assignment statements return the left value so see what checks need to be done with that 
+find every time we use the type of a variable found via Identifier visit function and check for null
+
+---no declarations inside the paren of an if
+---no declarations inside ifs and whiles and blocks etc
