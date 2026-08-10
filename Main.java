@@ -22,14 +22,14 @@ public class Main {
                 Goal root = parser.Goal();
 
                 DeclarationCollectorVisitor declarations = new DeclarationCollectorVisitor();
-                root.accept(declarations, null);
+                root.accept(declarations);
                 TypecheckVisitor eval = new TypecheckVisitor(declarations.getMethods(), declarations.getClassesAndTheirParents());
                 root.accept(eval, false);
                 System.err.println("SUCCESS: Program " + arg + " passed the semantic check.");
 
                 System.out.println("Offsets:");
                 OffsetGeneratorVisitor ofvis = new OffsetGeneratorVisitor(declarations.getMethods(), declarations.getClassesAndTheirParents());
-                root.accept(ofvis, null);
+                root.accept(ofvis);
                 ofvis.printOffsets();
 
             }
@@ -202,7 +202,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
         //add the parameters and the varDeclarations to the symboltable
         //parameters:
         if (n.f4.present()){
-            FormalParamListData params = n.f4.accept(new FormalParameterVisitor(), null);
+            FormalParamListData params = n.f4.accept(new FormalParameterVisitor());
             for (Parameter param : params.getParameters()){
                 variableSymbolTable.insert(new ClassAndIdentifier(currentClass, param.id()), param.type());
             }
@@ -400,7 +400,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
         if (methodInfo == null) {throw new SemanticCheckException("method " + methodName + " was called on an object " + "(of type " + className + ")" +" that doesn't have that method");}
 
         //make sure the expression list matches the methodInfo, ? needed because f.f4.accept returns false if it's not present but we instead need an empty list to represent no falsements
-        LinkedList<String> expressionList = n.f4.present() ? n.f4.accept(new GetExpressionListTypesVisitor(this), null) : new LinkedList<String>();
+        LinkedList<String> expressionList = n.f4.present() ? n.f4.accept(new GetExpressionListTypesVisitor(this)) : new LinkedList<String>();
 
         if (! (expressionList.size() == methodInfo.argumentTypes().size()) ) {throw new SemanticCheckException("Incorrect amount of arguments in method call");}
         for(int i = 0; i < expressionList.size(); i++){
@@ -634,8 +634,8 @@ class DeclarationCollectorVisitor extends StringRepresentationVisitor{
     * f17 -> "}"
     */
     @Override
-    public String visit(MainClass n, Void ignored) throws Exception {
-        String mainClassName = n.f1.accept(this, null);
+    public String visit(MainClass n) throws Exception {
+        String mainClassName = n.f1.accept(this);
         currentClass = mainClassName;
         classesAndTheirParents.put(mainClassName, null);
         return null;
@@ -649,11 +649,12 @@ class DeclarationCollectorVisitor extends StringRepresentationVisitor{
     * f4 -> ( MethodDeclaration() )*
     * f5 -> "}"
     */
-   public String visit(ClassDeclaration n, Void ignored) throws Exception {
-        this.currentClass = n.f1.accept(this, null);
+   @Override
+   public String visit(ClassDeclaration n) throws Exception {
+        this.currentClass = n.f1.accept(this);
         if (classesAndTheirParents.containsKey(currentClass)) {throw new SemanticCheckException("This class has already been declared elsewhere: " + currentClass); }
         classesAndTheirParents.put(currentClass, null);
-        n.f4.accept(this, null);
+        n.f4.accept(this);
         return null;
    }
 
@@ -667,13 +668,14 @@ class DeclarationCollectorVisitor extends StringRepresentationVisitor{
     * f6 -> ( MethodDeclaration() )*
     * f7 -> "}"
     */
-   public String visit(ClassExtendsDeclaration n, Void ignored) throws Exception {
-        this.currentClass = n.f1.accept(this, null);
-        String parentClass = n.f3.accept(this, null);
+   @Override
+   public String visit(ClassExtendsDeclaration n) throws Exception {
+        this.currentClass = n.f1.accept(this);
+        String parentClass = n.f3.accept(this);
         if (classesAndTheirParents.containsKey(currentClass)) {throw new SemanticCheckException("This class has already been declared elsewhere: " + currentClass); }
         if (!classesAndTheirParents.containsKey(parentClass)) { throw new SemanticCheckException("Class " + currentClass + " tried to inherit from a class called " + parentClass + ", but that class had not been declared yet or has no declaration at all");}
         classesAndTheirParents.put(currentClass, parentClass);
-        n.f6.accept(this, null);
+        n.f6.accept(this);
         return null;
    }
 
@@ -692,15 +694,16 @@ class DeclarationCollectorVisitor extends StringRepresentationVisitor{
     * f11 -> ";"
     * f12 -> "}"
     */
-    public String visit(MethodDeclaration n, Void ignored) throws Exception {
-        String methodName = n.f2.accept(this, null);
+   @Override
+    public String visit(MethodDeclaration n) throws Exception {
+        String methodName = n.f2.accept(this);
         List<String> argTypes = new LinkedList<>();
         if (n.f4.present()) {
-            for (Parameter p : n.f4.accept(new FormalParameterVisitor(), null).getParameters()) {
+            for (Parameter p : n.f4.accept(new FormalParameterVisitor()).getParameters()) {
                 argTypes.add(p.type());
             }
         }
-        MethodInfo methodInfo = new MethodInfo(n.f1.accept(this, null), argTypes);
+        MethodInfo methodInfo = new MethodInfo(n.f1.accept(this), argTypes);
         if (methodInfo.returnType().equals("void")) {throw new SemanticCheckException("A void method was declared. There are no void methods in this language.");}
         // first check the current class to see if this method name has already been used and error if it has
         // then check parent classes to see if the name has been used in which case they must have same methodInfo
@@ -719,7 +722,7 @@ class DeclarationCollectorVisitor extends StringRepresentationVisitor{
     }
 }
 
-class GetExpressionListTypesVisitor extends GJDepthFirst<LinkedList<String>, Void>{
+class GetExpressionListTypesVisitor extends GJNoArguDepthFirst<LinkedList<String>>{
     private TypecheckVisitor typeVisitor;
     GetExpressionListTypesVisitor(TypecheckVisitor typeVisitor){
         this.typeVisitor = typeVisitor;
@@ -728,19 +731,21 @@ class GetExpressionListTypesVisitor extends GJDepthFirst<LinkedList<String>, Voi
      * f0 -> Expression()
      * f1 -> ExpressionTail()
      */
-    public LinkedList<String> visit(ExpressionList n, Void ignored) throws Exception {
+    @Override
+    public LinkedList<String> visit(ExpressionList n) throws Exception {
        LinkedList<String> typesOfExpressions = new LinkedList<String>();
        typesOfExpressions.add(n.f0.accept(typeVisitor, false));
-       typesOfExpressions.addAll(n.f1.accept(this, null));
+       typesOfExpressions.addAll(n.f1.accept(this));
        return typesOfExpressions;
     }
     /**
      * f0 -> ( ExpressionTerm() )*
      */
-    public LinkedList<String> visit(ExpressionTail n, Void ignored) throws Exception {
+    @Override
+    public LinkedList<String> visit(ExpressionTail n) throws Exception {
         LinkedList<String> typesOfExpressions = new LinkedList<String>();
         for(int i = 0; i < n.f0.size(); i++){
-            typesOfExpressions.add(n.f0.elementAt(i).accept(this, null).get(0));
+            typesOfExpressions.add(n.f0.elementAt(i).accept(this).get(0));
         }
         return typesOfExpressions;
     }
@@ -748,7 +753,8 @@ class GetExpressionListTypesVisitor extends GJDepthFirst<LinkedList<String>, Voi
      * f0 -> ","
      * f1 -> Expression()
      */
-    public LinkedList<String> visit(ExpressionTerm n, Void ignored) throws Exception {
+    @Override
+    public LinkedList<String> visit(ExpressionTerm n) throws Exception {
        LinkedList<String> type = new LinkedList<String>();
        type.add(n.f1.accept(typeVisitor, false));
        return type;
@@ -757,23 +763,25 @@ class GetExpressionListTypesVisitor extends GJDepthFirst<LinkedList<String>, Voi
 
 
 //visitor that returns the string that represents primitive types, as well as IDs (identifiers) in string format
-class StringRepresentationVisitor extends GJDepthFirst<String, Void>{
-   public String visit(BooleanArrayType n, Void ignored){
+class StringRepresentationVisitor extends GJNoArguDepthFirst<String>{
+    @Override
+   public String visit(BooleanArrayType n){
        return "boolean[]";
    }
-
-   public String visit(IntegerArrayType n, Void ignored){
+   @Override
+   public String visit(IntegerArrayType n){
       return "int[]";
    }
-
-   public String visit(BooleanType n, Void ignored){
+   @Override
+   public String visit(BooleanType n){
       return "boolean";
    }
-
-   public String visit(IntegerType n, Void ignored){
+   @Override
+   public String visit(IntegerType n){
       return "int";
    }
-    public String visit(Identifier n, Void ignored){
+   @Override
+    public String visit(Identifier n){
         return n.f0.toString();
     }
 }
@@ -852,17 +860,19 @@ class OffsetGeneratorVisitor extends StringRepresentationVisitor{
             co.printOffsets();
         }
     }
-    public String visit(MainClass n, Void ignored) throws Exception{
-        offsets.add(new ClassOffsets(n.f1.accept(this,null)));
+    @Override
+    public String visit(MainClass n) throws Exception{
+        offsets.add(new ClassOffsets(n.f1.accept(this)));
         return null;
     }
     /**
     * f0 -> Type()
     * f1 -> Identifier()
     */
-    public String visit(VarDeclaration n, Void ignored) throws Exception {
-        String type = n.f0.accept(this, null);
-        offsets.getLast().addMember(n.f1.accept(this, null), getStorageRequired(type, false), false);
+   @Override
+    public String visit(VarDeclaration n) throws Exception {
+        String type = n.f0.accept(this);
+        offsets.getLast().addMember(n.f1.accept(this), getStorageRequired(type, false), false);
         return null;
     }
    /**
@@ -873,11 +883,12 @@ class OffsetGeneratorVisitor extends StringRepresentationVisitor{
     * f4 -> ( MethodDeclaration() )*
     * f5 -> "}"
     */
-   public String visit(ClassDeclaration n, Void ignored) throws Exception {
-        currentClass = n.f1.accept(this, null);
+   @Override
+   public String visit(ClassDeclaration n) throws Exception {
+        currentClass = n.f1.accept(this);
         offsets.add(new ClassOffsets(currentClass));
-        n.f3.accept(this, null);
-        n.f4.accept(this, null);
+        n.f3.accept(this);
+        n.f4.accept(this);
         return null;
    }
 
@@ -888,26 +899,28 @@ class OffsetGeneratorVisitor extends StringRepresentationVisitor{
     * f5 -> ( VarDeclaration() )*
     * f6 -> ( MethodDeclaration() )*
     */
-   public String visit(ClassExtendsDeclaration n, Void ignored) throws Exception {
-        currentClass = n.f1.accept(this, null);
-        String parentClass = n.f3.accept(this, null);
+   @Override
+   public String visit(ClassExtendsDeclaration n) throws Exception {
+        currentClass = n.f1.accept(this);
+        String parentClass = n.f3.accept(this);
         for (ClassOffsets cos : offsets){
             if (cos.getClassName().equals(parentClass)){
                 offsets.add(new ClassOffsets(currentClass, cos.getNextFieldOffsetValue(), cos.getNextMethodOffsetValue()));
                 break;
             }
         }
-        n.f5.accept(this, null);
-        n.f6.accept(this, null);
+        n.f5.accept(this);
+        n.f6.accept(this);
         return null;
    }
 
    /**
     * f2 -> Identifier()
     */
-    public String visit(MethodDeclaration n, Void ignored) throws Exception {
+   @Override
+    public String visit(MethodDeclaration n) throws Exception {
         String parentClass = classesAndTheirParents.get(currentClass);
-        String methodName = n.f2.accept(this, null);
+        String methodName = n.f2.accept(this);
         if(parentClass == null){
             offsets.getLast().addMember(methodName, getStorageRequired(null, true), true);
         }
@@ -945,15 +958,16 @@ class FormalParamListData{
     }
 }
 
-class FormalParameterVisitor extends GJDepthFirst<FormalParamListData, Void>{
+class FormalParameterVisitor extends GJNoArguDepthFirst<FormalParamListData>{
     private StringRepresentationVisitor stringRep = new StringRepresentationVisitor();
    /**
     * f0 -> FormalParameter()
     * f1 -> FormalParameterTail()
     */
-    public FormalParamListData visit(FormalParameterList n, Void ignored) throws Exception {
-        FormalParamListData list = n.f0.accept(this, null);
-        list.addAll(n.f1.accept(this, null));
+    @Override
+    public FormalParamListData visit(FormalParameterList n) throws Exception {
+        FormalParamListData list = n.f0.accept(this);
+        list.addAll(n.f1.accept(this));
         return list;
     }
 
@@ -961,19 +975,21 @@ class FormalParameterVisitor extends GJDepthFirst<FormalParamListData, Void>{
     * f0 -> Type()
     * f1 -> Identifier()
     */
-    public FormalParamListData visit(FormalParameter n, Void ignored) throws Exception {
+   @Override
+    public FormalParamListData visit(FormalParameter n) throws Exception {
         FormalParamListData data = new FormalParamListData();
-        data.add(n.f0.accept(stringRep, null), n.f1.accept(stringRep, null));
+        data.add(n.f0.accept(stringRep), n.f1.accept(stringRep));
         return data;
     }
 
    /**
     * f0 -> ( FormalParameterTerm() )*
     */
-    public FormalParamListData visit(FormalParameterTail n, Void ignored) throws Exception {
+    @Override
+    public FormalParamListData visit(FormalParameterTail n) throws Exception {
         FormalParamListData types = new FormalParamListData();
         for(int i = 0; i < n.f0.size(); i++){
-            types.addAll(n.f0.elementAt(i).accept(this, null));
+            types.addAll(n.f0.elementAt(i).accept(this));
         }
         return types;
     }
@@ -982,8 +998,9 @@ class FormalParameterVisitor extends GJDepthFirst<FormalParamListData, Void>{
     * f0 -> ","
     * f1 -> FormalParameter()
     */
-    public FormalParamListData visit(FormalParameterTerm n, Void ignored) throws Exception {
-        return n.f1.accept(this, null);
+    @Override
+    public FormalParamListData visit(FormalParameterTerm n) throws Exception {
+        return n.f1.accept(this);
     }
 
 }
