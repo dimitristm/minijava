@@ -14,51 +14,36 @@ public class Main {
             System.exit(1);
         }
 
-        FileInputStream fis = null;
-        try{
-            for(int i = 0; i <args.length; i++){
-                try{
-                    fis = new FileInputStream(args[i]);
-                    System.out.println("---Checking " + args[i] + ".");
-                    MiniJavaParser parser = new MiniJavaParser(fis);
+        for(String arg : args){
+            try (FileInputStream fis = new FileInputStream(arg)){
+                System.out.println("---Checking " + arg + ".");
+                MiniJavaParser parser = new MiniJavaParser(fis);
 
-                    Goal root = parser.Goal();
+                Goal root = parser.Goal();
 
-                    DeclarationCollectorVisitor declarations = new DeclarationCollectorVisitor();
-                    root.accept(declarations, null);
-                    TypecheckVisitor eval = new TypecheckVisitor(declarations.getMethods(), declarations.getClassesAndTheirParents());
-                    root.accept(eval, false);
-                    System.err.println("SUCCESS: Program " + args[i] + " passed the semantic check.");
+                DeclarationCollectorVisitor declarations = new DeclarationCollectorVisitor();
+                root.accept(declarations, null);
+                TypecheckVisitor eval = new TypecheckVisitor(declarations.getMethods(), declarations.getClassesAndTheirParents());
+                root.accept(eval, false);
+                System.err.println("SUCCESS: Program " + arg + " passed the semantic check.");
 
-                    System.out.println("Offsets:");
-                    try{
-                        OffsetGeneratorVisitor ofvis = new OffsetGeneratorVisitor(declarations.getMethods(), declarations.getClassesAndTheirParents());
-                        root.accept(ofvis, null);
-                        ofvis.printOffsets();
-                    }
-                    catch(Exception e){
-                        System.out.println("Exception thrown while trying to get the offsets: " + e.getMessage());
-                    }
+                System.out.println("Offsets:");
+                OffsetGeneratorVisitor ofvis = new OffsetGeneratorVisitor(declarations.getMethods(), declarations.getClassesAndTheirParents());
+                root.accept(ofvis, null);
+                ofvis.printOffsets();
 
-                }
-                catch(ParseException ex){
-                    System.out.println(ex.getMessage());
-                }
-                catch(SemanticCheckException ex){
-                    System.out.println("ERROR: " + ex.getMessage());
-                }
             }
-        }
-
-        catch(FileNotFoundException ex){
-            System.err.println(ex.getMessage());
-        }
-        finally{
-            try{
-                if(fis != null) fis.close();
+            catch(FileNotFoundException ex){
+                System.err.println(ex.getMessage());
             }
             catch(IOException ex){
                 System.err.println(ex.getMessage());
+            }
+            catch(ParseException ex){
+                System.err.println(ex.getMessage());
+            }
+            catch(SemanticCheckException ex){
+                System.err.println("ERROR: " + ex.getMessage());
             }
         }
     }
@@ -70,63 +55,55 @@ class SemanticCheckException extends Exception{
     }
 }
 
-class MethodInfo{
-    public String returnType;
-    public LinkedList<String> argumentTypes;
-    MethodInfo(String retType, LinkedList<String> argTypes){
-        this.returnType = retType;
-        this.argumentTypes = argTypes;
-    }
-    @Override
-    public boolean equals(Object m){
-        MethodInfo mInfo = (MethodInfo)m;
-        return mInfo.returnType.equals(this.returnType) && mInfo.argumentTypes.equals(this.argumentTypes);
-    }
-}
+record Parameter(String type, String id) {}
+
+record MethodInfo(String returnType, List<String> argumentTypes) {}
 
 class ClassAndIdentifier {
-    String className;
-    String identifier;
+    private String className;
+    private String identifier;
     ClassAndIdentifier(String className, String identifier){
         this.className = className;
         this.identifier = identifier;
     }
     @Override
-    public boolean equals(Object c){
-        ClassAndIdentifier y = (ClassAndIdentifier)c;
-        return this.className.equals(y.className) && this.identifier.equals(y.identifier);
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        ClassAndIdentifier that = (ClassAndIdentifier)o;
+        return Objects.equals(className, that.className) && Objects.equals(identifier, that.identifier);
     }
     @Override
-    public int hashCode(){
-        return this.className.hashCode() + this.identifier.hashCode();
+    public int hashCode() {
+        return Objects.hash(className, identifier);
     }
 }
 
 class SymbolTable<K, V>{
-    private LinkedList<HashMap<K, V>> symbols = new LinkedList<HashMap<K, V>>();
-    public void enter(){
-        symbols.add(0, new HashMap<K, V>());
+    private Deque<HashMap<K, V>> scoped_symbols = new ArrayDeque<>();
+    public void enter_scope(){
+        scoped_symbols.push(new HashMap<>());
     }
-    public void insert(K classAndIdentifier, V info) throws Exception{
-        if (symbols.get(0).containsKey(classAndIdentifier)) throw new SemanticCheckException("An identifier was declared twice in the same scope.");
-        symbols.get(0).put(classAndIdentifier, info);
+    public void insert(K identifier, V info) throws Exception{
+        if (scoped_symbols.peek().containsKey(identifier)) throw new SemanticCheckException("An identifier was declared twice in the same scope.");
+        scoped_symbols.peek().put(identifier, info);
     }
     //returns null if the specified symbol does not exist
     public V lookup(K key){
-        for (Map<K, V> table:symbols){
+        for (Map<K, V> table:scoped_symbols){
             V val = table.get(key);
             if (val != null) {return val;}
         }
         return null;
     }
-    public void exit(){
-        symbols.remove(0);
+    public void exit_scope(){
+        scoped_symbols.pop();
     }
 }
 
 class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
     //in SymbolTable<ClassAndIdentifier, String> the string represents the type of the field/variable
-    private SymbolTable<ClassAndIdentifier, String> variableSymbolTable = new SymbolTable<ClassAndIdentifier, String>();
+    private SymbolTable<ClassAndIdentifier, String> variableSymbolTable = new SymbolTable<>();
     private final HashMap<ClassAndIdentifier, MethodInfo> methods;
     private final HashMap<String, String> classesAndTheirParents;
     private String currentClass;
@@ -157,17 +134,17 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
     * f17 -> "}"
     */
     @Override
-    public String visit(MainClass n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(MainClass n, Boolean ignored) throws Exception {
 
         currentClass = n.f1.accept(this, false);
 
-        variableSymbolTable.enter(); //create first scope where the fields of all classes are
-        variableSymbolTable.enter(); //go into the scope of main method
-        //insert the local variables of main
+        variableSymbolTable.enter_scope(); //create first scope where the fields of all classes are
+        variableSymbolTable.enter_scope(); //go into the scope of main method
+        //insert the local variables of the main method
         n.f14.accept(this, false);
         // handle statements here
         n.f15.accept(this, false);
-        variableSymbolTable.exit(); //exit main method scope
+        variableSymbolTable.exit_scope(); //exit main method scope
         return null;
     }
 
@@ -179,7 +156,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
     * f4 -> ( MethodDeclaration() )*
     * f5 -> "}"
     */
-    public String visit(ClassDeclaration n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(ClassDeclaration n, Boolean ignored) throws Exception {
         currentClass = n.f1.accept(this, false);
         //insert fields to symbol table
         n.f3.accept(this, false);
@@ -198,11 +175,9 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
     * f6 -> ( MethodDeclaration() )*
     * f7 -> "}"
     */
-   public String visit(ClassExtendsDeclaration n, Boolean expectingTypeOfIdentifier) throws Exception {
+   public String visit(ClassExtendsDeclaration n, Boolean ignored) throws Exception {
         currentClass = n.f1.accept(this, false);
-        //insert fields to symbol table
         n.f5.accept(this, false);
-        //handle methods
         n.f6.accept(this, false);
         return null;
    }
@@ -222,14 +197,14 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
     * f11 -> ";"
     * f12 -> "}"
     */
-    public String visit(MethodDeclaration n, Boolean expectingTypeOfIdentifier) throws Exception {
-        variableSymbolTable.enter();
+    public String visit(MethodDeclaration n, Boolean ignored) throws Exception {
+        variableSymbolTable.enter_scope();
         //add the parameters and the varDeclarations to the symboltable
         //parameters:
         if (n.f4.present()){
             FormalParamListData params = n.f4.accept(new FormalParameterVisitor(), null);
-            for (int i = 0; i < params.size(); i++){
-                variableSymbolTable.insert(new ClassAndIdentifier(currentClass, params.argumentIDs.get(i)), params.argumentTypes.get(i));
+            for (Parameter param : params.getParameters()){
+                variableSymbolTable.insert(new ClassAndIdentifier(currentClass, param.id()), param.type());
             }
         }
         //local vars:
@@ -238,7 +213,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
         n.f8.accept(this, false);
         //make sure the return type is correct
         if (! n.f1.accept(this, false).equals(n.f10.accept(this, false))) { throw new SemanticCheckException("the return type of the function " + n.f2.accept(this, false) + " is wrong.");}
-        variableSymbolTable.exit();
+        variableSymbolTable.exit_scope();
         return null;
     }
 
@@ -249,7 +224,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
     * f2 -> ";"
     */
     // add to the symboltable
-    public String visit(VarDeclaration n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(VarDeclaration n, Boolean ignored) throws Exception {
         variableSymbolTable.insert(new ClassAndIdentifier(currentClass, n.f1.accept(this, false)), n.f0.accept(this, false));
         return null;
     }
@@ -279,7 +254,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
     *       | IntegerType()
     *       | Identifier()
     */
-    public String visit(Type n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(Type n, Boolean ignored) throws Exception {
         return n.f0.accept(this, false);
     }
 
@@ -287,7 +262,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
      * f0 -> BooleanArrayType()
      *       | IntegerArrayType()
      */
-    public String visit(ArrayType n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(ArrayType n, Boolean ignored) throws Exception {
        return n.f0.accept(this, false);
     }
     /**
@@ -295,7 +270,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
      * f1 -> "["
      * f2 -> "]"
      */
-    public String visit(BooleanArrayType n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(BooleanArrayType n, Boolean ignored) throws Exception {
         return "boolean[]";
     }
     /**
@@ -303,19 +278,19 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
      * f1 -> "["
      * f2 -> "]"
      */
-    public String visit(IntegerArrayType n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(IntegerArrayType n, Boolean ignored) throws Exception {
         return "int[]";
     }
     /**
      * f0 -> "boolean"
      */
-    public String visit(BooleanType n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(BooleanType n, Boolean ignored) throws Exception {
         return "boolean";
     }
     /**
      * f0 -> "int"
      */
-    public String visit(IntegerType n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(IntegerType n, Boolean ignored) throws Exception {
         return "int";
     }
    //------------expressions return their type------------
@@ -330,7 +305,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
     *       | MessageSend()
     *       | Clause()
     */
-    public String visit(Expression n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(Expression n, Boolean ignored) throws Exception {
         return n.f0.accept(this, false);
     }
     //returns the type of the expressions as a string, or throws an exception if they're not the same
@@ -345,7 +320,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
      * f1 -> "&&"
      * f2 -> Clause()
      */
-    public String visit(AndExpression n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(AndExpression n, Boolean ignored) throws Exception {
         return bothAreSpecificType(n.f0, n.f2, "boolean");
     }
     /**
@@ -353,7 +328,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
      * f1 -> "<"
      * f2 -> PrimaryExpression()
      */
-    public String visit(CompareExpression n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(CompareExpression n, Boolean ignored) throws Exception {
         bothAreSpecificType(n.f0, n.f2, "int");
         return "boolean";
     }   
@@ -362,7 +337,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
      * f1 -> "+"
      * f2 -> PrimaryExpression()
      */
-    public String visit(PlusExpression n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(PlusExpression n, Boolean ignored) throws Exception {
         return bothAreSpecificType(n.f0, n.f2, "int");
     }   
     /**
@@ -370,7 +345,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
      * f1 -> "-"
      * f2 -> PrimaryExpression()
      */
-    public String visit(MinusExpression n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(MinusExpression n, Boolean ignored) throws Exception {
        return bothAreSpecificType(n.f0, n.f2, "int");
     }   
     /**
@@ -378,7 +353,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
      * f1 -> "*"
      * f2 -> PrimaryExpression()
      */
-    public String visit(TimesExpression n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(TimesExpression n, Boolean ignored) throws Exception {
        return bothAreSpecificType(n.f0, n.f2, "int");
     }
     /**
@@ -387,7 +362,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
      * f2 -> PrimaryExpression()
      * f3 -> "]"
      */
-    public String visit(ArrayLookup n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(ArrayLookup n, Boolean ignored) throws Exception {
         bothAreCompatibleType(n.f2.accept(this,false), "int");
         String type = n.f0.accept(this, false);
         return type.substring(0, type.length() - 2);//remove the last 2 characters ([])
@@ -397,7 +372,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
      * f1 -> "."
      * f2 -> "length"
      */
-    public String visit(ArrayLength n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(ArrayLength n, Boolean ignored) throws Exception {
         String exp_type = n.f0.accept(this, false);
         if (!exp_type.endsWith("[]")) { throw new SemanticCheckException("tried to get array length of something that is not an array"); }
         return "int";
@@ -410,7 +385,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
      * f4 -> ( ExpressionList() )? -> must be correct (methodInfo)
      * f5 -> ")"
      */
-    public String visit(MessageSend n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(MessageSend n, Boolean ignored) throws Exception {
         String className = n.f0.accept(this, false);
         String methodName = n.f2.accept(this, false);
 
@@ -427,18 +402,18 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
         //make sure the expression list matches the methodInfo, ? needed because f.f4.accept returns false if it's not present but we instead need an empty list to represent no falsements
         LinkedList<String> expressionList = n.f4.present() ? n.f4.accept(new GetExpressionListTypesVisitor(this), null) : new LinkedList<String>();
 
-        if (! (expressionList.size() == methodInfo.argumentTypes.size()) ) {throw new SemanticCheckException("Incorrect amount of arguments in method call");}
+        if (! (expressionList.size() == methodInfo.argumentTypes().size()) ) {throw new SemanticCheckException("Incorrect amount of arguments in method call");}
         for(int i = 0; i < expressionList.size(); i++){
-            bothAreCompatibleType(methodInfo.argumentTypes.get(i), expressionList.get(i));
+            bothAreCompatibleType(methodInfo.argumentTypes().get(i), expressionList.get(i));
         }
         //return our return type
-        return methodInfo.returnType;
+        return methodInfo.returnType();
     }   
     /**
      * f0 -> NotExpression()
      *       | PrimaryExpression()
      */
-    public String visit(Clause n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(Clause n, Boolean ignored) throws Exception {
        return n.f0.accept(this, false);
     }
     /**
@@ -451,38 +426,38 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
      *       | AllocationExpression()
      *       | BracketExpression()
      */
-    public String visit(PrimaryExpression n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(PrimaryExpression n, Boolean ignored) throws Exception {
        return n.f0.accept(this, true);
     }   
     /**
      * f0 -> <INTEGER_LITERAL>
      */
-    public String visit(IntegerLiteral n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(IntegerLiteral n, Boolean ignored) throws Exception {
         return "int";
     }   
     /**
      * f0 -> "true"
      */
-    public String visit(TrueLiteral n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(TrueLiteral n, Boolean ignored) throws Exception {
         return "boolean";
     }   
     /**
      * f0 -> "false"
      */
-    public String visit(FalseLiteral n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(FalseLiteral n, Boolean ignored) throws Exception {
         return "boolean";
     }   
     /**
      * f0 -> "this"
      */
-    public String visit(ThisExpression n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(ThisExpression n, Boolean ignored) throws Exception {
         return currentClass;
     }   
     /**
      * f0 -> BooleanArrayAllocationExpression()
      *       | IntegerArrayAllocationExpression()
      */
-    public String visit(ArrayAllocationExpression n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(ArrayAllocationExpression n, Boolean ignored) throws Exception {
        return n.f0.accept(this, false);
     }
     private String checkNodeForTypeAndReturnAnother (Node node, String typeToCheckFor, String typeToReturn) throws Exception{
@@ -496,7 +471,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
      * f3 -> Expression()
      * f4 -> "]"
      */
-    public String visit(BooleanArrayAllocationExpression n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(BooleanArrayAllocationExpression n, Boolean ignored) throws Exception {
         return checkNodeForTypeAndReturnAnother(n.f3, "int", "boolean[]");
     }   
     /**
@@ -506,7 +481,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
      * f3 -> Expression()
      * f4 -> "]"
      */
-    public String visit(IntegerArrayAllocationExpression n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(IntegerArrayAllocationExpression n, Boolean ignored) throws Exception {
         return checkNodeForTypeAndReturnAnother(n.f3, "int", "int[]");
     }   
     /**
@@ -515,7 +490,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
      * f2 -> "("
      * f3 -> ")"
      */
-    public String visit(AllocationExpression n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(AllocationExpression n, Boolean ignored) throws Exception {
         String className = n.f1.accept(this, false);
         if(!classesAndTheirParents.containsKey(className)){
             throw new SemanticCheckException("Allocation expression did not contain a declared class, " + className + " is not recognised");
@@ -526,7 +501,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
      * f0 -> "!"
      * f1 -> Clause()
      */
-    public String visit(NotExpression n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(NotExpression n, Boolean ignored) throws Exception {
         return checkNodeForTypeAndReturnAnother(n.f1, "boolean", "boolean");
     }   
     /**
@@ -534,7 +509,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
      * f1 -> Expression()
      * f2 -> ")"
      */
-    public String visit(BracketExpression n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(BracketExpression n, Boolean ignored) throws Exception {
         return n.f1.accept(this, false);
     }
    //statements
@@ -546,7 +521,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
     *       | WhileStatement()
     *       | PrintStatement()
     */
-   public String visit(Statement n, Boolean expectingTypeOfIdentifier) throws Exception {
+   public String visit(Statement n, Boolean ignored) throws Exception {
       return n.f0.accept(this, false);
    }
 
@@ -568,7 +543,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
     * f2 -> Expression()
     * f3 -> ";"
     */
-    public String visit(AssignmentStatement n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(AssignmentStatement n, Boolean ignored) throws Exception {
         bothAreCompatibleType(n.f0.accept(this, true), n.f2.accept(this, false));
         return null;
     }   
@@ -581,7 +556,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
      * f5 -> Expression()
      * f6 -> ";"
      */
-    public String visit(ArrayAssignmentStatement n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(ArrayAssignmentStatement n, Boolean ignored) throws Exception {
         String IDtype = n.f0.accept(this, true);
         String rType = n.f5.accept(this, false);
         if (IDtype == null) { throw new SemanticCheckException("Tried to do an array assignment Statement on something that has not been declared");}
@@ -599,7 +574,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
      * f5 -> "else"
      * f6 -> Statement()
      */
-    public String visit(IfStatement n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(IfStatement n, Boolean ignored) throws Exception {
        if (!n.f2.accept(this, false).equals("boolean")) {throw new SemanticCheckException("if statement must have a boolean type in its parentheses");}
        n.f4.accept(this, false);
        n.f6.accept(this, false);
@@ -612,7 +587,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
      * f3 -> ")"
      * f4 -> Statement()
      */
-    public String visit(WhileStatement n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(WhileStatement n, Boolean ignored) throws Exception {
        if (!n.f2.accept(this, false).equals("boolean")) {throw new SemanticCheckException("while statement must have a boolean type in its parentheses");}
        n.f4.accept(this, false);
        return null;
@@ -624,7 +599,7 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
     * f3 -> ")"
     * f4 -> ";"
     */
-    public String visit(PrintStatement n, Boolean expectingTypeOfIdentifier) throws Exception {
+    public String visit(PrintStatement n, Boolean ignored) throws Exception {
         if (!n.f2.accept(this, false).equals("int")) {throw new SemanticCheckException("print statement can only take int types");}
         return null;
     }
@@ -632,8 +607,8 @@ class TypecheckVisitor extends GJDepthFirst<String, Boolean>{
 }
 
 class DeclarationCollectorVisitor extends StringRepresentationVisitor{
-    private HashMap<ClassAndIdentifier, MethodInfo> methods = new HashMap<ClassAndIdentifier, MethodInfo>();
-    private HashMap<String, String> classesAndTheirParents = new HashMap<String, String>();
+    private HashMap<ClassAndIdentifier, MethodInfo> methods = new HashMap<>();
+    private HashMap<String, String> classesAndTheirParents = new HashMap<>();
     private String currentClass;
     public HashMap<ClassAndIdentifier, MethodInfo> getMethods(){ return this.methods; }
     public HashMap<String, String> getClassesAndTheirParents() { return this.classesAndTheirParents; }
@@ -659,7 +634,7 @@ class DeclarationCollectorVisitor extends StringRepresentationVisitor{
     * f17 -> "}"
     */
     @Override
-    public String visit(MainClass n, Void argu) throws Exception {
+    public String visit(MainClass n, Void ignored) throws Exception {
         String mainClassName = n.f1.accept(this, null);
         currentClass = mainClassName;
         classesAndTheirParents.put(mainClassName, null);
@@ -674,11 +649,11 @@ class DeclarationCollectorVisitor extends StringRepresentationVisitor{
     * f4 -> ( MethodDeclaration() )*
     * f5 -> "}"
     */
-   public String visit(ClassDeclaration n, Void argu) throws Exception {
+   public String visit(ClassDeclaration n, Void ignored) throws Exception {
         this.currentClass = n.f1.accept(this, null);
         if (classesAndTheirParents.containsKey(currentClass)) {throw new SemanticCheckException("This class has already been declared elsewhere: " + currentClass); }
         classesAndTheirParents.put(currentClass, null);
-        n.f4.accept(this, argu);
+        n.f4.accept(this, null);
         return null;
    }
 
@@ -692,13 +667,13 @@ class DeclarationCollectorVisitor extends StringRepresentationVisitor{
     * f6 -> ( MethodDeclaration() )*
     * f7 -> "}"
     */
-   public String visit(ClassExtendsDeclaration n, Void argu) throws Exception {
+   public String visit(ClassExtendsDeclaration n, Void ignored) throws Exception {
         this.currentClass = n.f1.accept(this, null);
         String parentClass = n.f3.accept(this, null);
         if (classesAndTheirParents.containsKey(currentClass)) {throw new SemanticCheckException("This class has already been declared elsewhere: " + currentClass); }
         if (!classesAndTheirParents.containsKey(parentClass)) { throw new SemanticCheckException("Class " + currentClass + " tried to inherit from a class called " + parentClass + ", but that class had not been declared yet or has no declaration at all");}
         classesAndTheirParents.put(currentClass, parentClass);
-        n.f6.accept(this, argu);
+        n.f6.accept(this, null);
         return null;
    }
 
@@ -717,11 +692,16 @@ class DeclarationCollectorVisitor extends StringRepresentationVisitor{
     * f11 -> ";"
     * f12 -> "}"
     */
-    public String visit(MethodDeclaration n, Void argu) throws Exception {
-        String methodName = n.f2.accept(this, argu);
-        LinkedList<String> argTypes = n.f4.present() ? n.f4.accept(new FormalParameterVisitor(), null).argumentTypes : new LinkedList<String>();
-        MethodInfo methodInfo = new MethodInfo(n.f1.accept(this, argu), argTypes);
-        if (methodInfo.returnType.equals("void")) {throw new SemanticCheckException("A void method was declared. There are no void methods in this language.");}
+    public String visit(MethodDeclaration n, Void ignored) throws Exception {
+        String methodName = n.f2.accept(this, null);
+        List<String> argTypes = new LinkedList<>();
+        if (n.f4.present()) {
+            for (Parameter p : n.f4.accept(new FormalParameterVisitor(), null).getParameters()) {
+                argTypes.add(p.type());
+            }
+        }
+        MethodInfo methodInfo = new MethodInfo(n.f1.accept(this, null), argTypes);
+        if (methodInfo.returnType().equals("void")) {throw new SemanticCheckException("A void method was declared. There are no void methods in this language.");}
         // first check the current class to see if this method name has already been used and error if it has
         // then check parent classes to see if the name has been used in which case they must have same methodInfo
         if (methods.containsKey(new ClassAndIdentifier(currentClass, methodName))) { throw new SemanticCheckException("Declared the method " + methodName + " twice in one class");}
@@ -748,16 +728,16 @@ class GetExpressionListTypesVisitor extends GJDepthFirst<LinkedList<String>, Voi
      * f0 -> Expression()
      * f1 -> ExpressionTail()
      */
-    public LinkedList<String> visit(ExpressionList n, Void argu) throws Exception {
+    public LinkedList<String> visit(ExpressionList n, Void ignored) throws Exception {
        LinkedList<String> typesOfExpressions = new LinkedList<String>();
        typesOfExpressions.add(n.f0.accept(typeVisitor, false));
-       typesOfExpressions.addAll(n.f1.accept(this, argu));
+       typesOfExpressions.addAll(n.f1.accept(this, null));
        return typesOfExpressions;
     }
     /**
      * f0 -> ( ExpressionTerm() )*
      */
-    public LinkedList<String> visit(ExpressionTail n, Void argu) throws Exception {
+    public LinkedList<String> visit(ExpressionTail n, Void ignored) throws Exception {
         LinkedList<String> typesOfExpressions = new LinkedList<String>();
         for(int i = 0; i < n.f0.size(); i++){
             typesOfExpressions.add(n.f0.elementAt(i).accept(this, null).get(0));
@@ -768,7 +748,7 @@ class GetExpressionListTypesVisitor extends GJDepthFirst<LinkedList<String>, Voi
      * f0 -> ","
      * f1 -> Expression()
      */
-    public LinkedList<String> visit(ExpressionTerm n, Void argu) throws Exception {
+    public LinkedList<String> visit(ExpressionTerm n, Void ignored) throws Exception {
        LinkedList<String> type = new LinkedList<String>();
        type.add(n.f1.accept(typeVisitor, false));
        return type;
@@ -778,34 +758,27 @@ class GetExpressionListTypesVisitor extends GJDepthFirst<LinkedList<String>, Voi
 
 //visitor that returns the string that represents primitive types, as well as IDs (identifiers) in string format
 class StringRepresentationVisitor extends GJDepthFirst<String, Void>{
-   public String visit(BooleanArrayType n, Void argu){
+   public String visit(BooleanArrayType n, Void ignored){
        return "boolean[]";
    }
 
-   public String visit(IntegerArrayType n, Void argu){
+   public String visit(IntegerArrayType n, Void ignored){
       return "int[]";
    }
 
-   public String visit(BooleanType n, Void argu){
+   public String visit(BooleanType n, Void ignored){
       return "boolean";
    }
 
-   public String visit(IntegerType n, Void argu){
+   public String visit(IntegerType n, Void ignored){
       return "int";
    }
-    public String visit(Identifier n, Void argu){
+    public String visit(Identifier n, Void ignored){
         return n.f0.toString();
     }
 }
 
-class MemberAndOffset{
-    MemberAndOffset(String memberName, int offset){
-        this.memberName = memberName;
-        this.offset = offset;
-    }
-    public String memberName;
-    public int offset;
-}
+record MemberAndOffset(String memberName, int offset) {}
 
 class ClassOffsets{
     ClassOffsets(String className){
@@ -816,10 +789,16 @@ class ClassOffsets{
         this.nextFieldOffsetValue = nextFieldOffsetValueOfParent;
         this.nextMethodOffsetValue = nextMethodOffsetValueOfParent;
     }
-    public String className;
-    public LinkedList<MemberAndOffset> offsets = new LinkedList<MemberAndOffset>();
+    private String className;
+    private List<MemberAndOffset> offsets = new LinkedList<>();
     private int nextFieldOffsetValue;
     private int nextMethodOffsetValue;
+    public String getClassName(){
+        return this.className;
+    }
+    public List<MemberAndOffset> getOffsets(){
+        return Collections.unmodifiableList(offsets);
+    }
     public int getNextFieldOffsetValue(){
         return this.nextFieldOffsetValue;
     }
@@ -837,31 +816,35 @@ class ClassOffsets{
         }
     }
     public void printOffsets(){
-        for (MemberAndOffset memberAndOffset : offsets){
-            System.out.println(className + "." + memberAndOffset.memberName + " : " + memberAndOffset.offset);
+        for (MemberAndOffset memberAndOffset : getOffsets()){
+            System.out.println(getClassName() + "." + memberAndOffset.memberName() + " : " + memberAndOffset.offset());
         }
     }
 }
 class OffsetGeneratorVisitor extends StringRepresentationVisitor{
+    private static final int POINTER_SIZE = 8;
+    private static final int INT_SIZE = 4;
+    private static final int BOOLEAN_SIZE = 1;
+
     OffsetGeneratorVisitor(HashMap<ClassAndIdentifier, MethodInfo> methods, HashMap<String, String> classesAndTheirParents){
         this.classesAndTheirParents = classesAndTheirParents;
         this.methods = methods;
-        storageRequired.put("int", 4);
-        storageRequired.put("boolean", 1);
-        storageRequired.put("int[]", 8);
-        storageRequired.put("boolean[]", 8);
+        storageRequired.put("int", INT_SIZE);
+        storageRequired.put("boolean", BOOLEAN_SIZE);
+        storageRequired.put("int[]", POINTER_SIZE);
+        storageRequired.put("boolean[]", POINTER_SIZE);
     }
-    private LinkedList<ClassOffsets> offsets = new LinkedList<ClassOffsets>();
+    private LinkedList<ClassOffsets> offsets = new LinkedList<>();
     private String currentClass = null;
-    private HashMap<String, Integer> storageRequired = new HashMap<String, Integer>();
+    private Map<String, Integer> storageRequired = new HashMap<>();
 
-    private HashMap<String, String> classesAndTheirParents = new HashMap<String, String>();
-    private HashMap<ClassAndIdentifier, MethodInfo> methods = new HashMap<ClassAndIdentifier, MethodInfo>();
+    private Map<String, String> classesAndTheirParents = new HashMap<>();
+    private Map<ClassAndIdentifier, MethodInfo> methods = new HashMap<>();
 
     private Integer getStorageRequired(String type, boolean isFunction){
-        if (isFunction) { return 8; } //it is a pointer
+        if (isFunction) { return POINTER_SIZE; } //it is a pointer
         Integer storage = storageRequired.get(type);
-        if (storage == null) { return 8; } //it is a class type, so a pointer
+        if (storage == null) { return POINTER_SIZE; } //it is a class type, so a pointer
         return storage;
     }
     public void printOffsets(){
@@ -869,7 +852,7 @@ class OffsetGeneratorVisitor extends StringRepresentationVisitor{
             co.printOffsets();
         }
     }
-    public String visit(MainClass n, Void argu) throws Exception{
+    public String visit(MainClass n, Void ignored) throws Exception{
         offsets.add(new ClassOffsets(n.f1.accept(this,null)));
         return null;
     }
@@ -877,7 +860,7 @@ class OffsetGeneratorVisitor extends StringRepresentationVisitor{
     * f0 -> Type()
     * f1 -> Identifier()
     */
-    public String visit(VarDeclaration n, Void argu) throws Exception {
+    public String visit(VarDeclaration n, Void ignored) throws Exception {
         String type = n.f0.accept(this, null);
         offsets.getLast().addMember(n.f1.accept(this, null), getStorageRequired(type, false), false);
         return null;
@@ -890,7 +873,7 @@ class OffsetGeneratorVisitor extends StringRepresentationVisitor{
     * f4 -> ( MethodDeclaration() )*
     * f5 -> "}"
     */
-   public String visit(ClassDeclaration n, Void argu) throws Exception {
+   public String visit(ClassDeclaration n, Void ignored) throws Exception {
         currentClass = n.f1.accept(this, null);
         offsets.add(new ClassOffsets(currentClass));
         n.f3.accept(this, null);
@@ -905,11 +888,11 @@ class OffsetGeneratorVisitor extends StringRepresentationVisitor{
     * f5 -> ( VarDeclaration() )*
     * f6 -> ( MethodDeclaration() )*
     */
-   public String visit(ClassExtendsDeclaration n, Void argu) throws Exception {
+   public String visit(ClassExtendsDeclaration n, Void ignored) throws Exception {
         currentClass = n.f1.accept(this, null);
         String parentClass = n.f3.accept(this, null);
         for (ClassOffsets cos : offsets){
-            if (cos.className.equals(parentClass)){
+            if (cos.getClassName().equals(parentClass)){
                 offsets.add(new ClassOffsets(currentClass, cos.getNextFieldOffsetValue(), cos.getNextMethodOffsetValue()));
                 break;
             }
@@ -922,7 +905,7 @@ class OffsetGeneratorVisitor extends StringRepresentationVisitor{
    /**
     * f2 -> Identifier()
     */
-    public String visit(MethodDeclaration n, Void argu) throws Exception {
+    public String visit(MethodDeclaration n, Void ignored) throws Exception {
         String parentClass = classesAndTheirParents.get(currentClass);
         String methodName = n.f2.accept(this, null);
         if(parentClass == null){
@@ -947,18 +930,18 @@ class OffsetGeneratorVisitor extends StringRepresentationVisitor{
 
 
 class FormalParamListData{
-    public LinkedList<String> argumentTypes = new LinkedList<String>();
-    public LinkedList<String> argumentIDs = new LinkedList<String>();
+    private List<Parameter> parameters = new LinkedList<>();
+    public List<Parameter> getParameters() {
+        return Collections.unmodifiableList(parameters);
+    }
     public void add(String type, String ID){
-        this.argumentTypes.add(type);
-        this.argumentIDs.add(ID);
+        this.parameters.add(new Parameter(type, ID));
     }
     public void addAll(FormalParamListData otherList){
-        this.argumentTypes.addAll(otherList.argumentTypes);
-        this.argumentIDs.addAll(otherList.argumentIDs);
+        this.parameters.addAll(otherList.getParameters());
     }
     public int size(){
-        return argumentTypes.size();
+        return parameters.size();
     }
 }
 
@@ -968,9 +951,9 @@ class FormalParameterVisitor extends GJDepthFirst<FormalParamListData, Void>{
     * f0 -> FormalParameter()
     * f1 -> FormalParameterTail()
     */
-    public FormalParamListData visit(FormalParameterList n, Void argu) throws Exception {
-        FormalParamListData list = n.f0.accept(this, argu);
-        list.addAll(n.f1.accept(this, argu));
+    public FormalParamListData visit(FormalParameterList n, Void ignored) throws Exception {
+        FormalParamListData list = n.f0.accept(this, null);
+        list.addAll(n.f1.accept(this, null));
         return list;
     }
 
@@ -978,7 +961,7 @@ class FormalParameterVisitor extends GJDepthFirst<FormalParamListData, Void>{
     * f0 -> Type()
     * f1 -> Identifier()
     */
-    public FormalParamListData visit(FormalParameter n, Void argu) throws Exception {
+    public FormalParamListData visit(FormalParameter n, Void ignored) throws Exception {
         FormalParamListData data = new FormalParamListData();
         data.add(n.f0.accept(stringRep, null), n.f1.accept(stringRep, null));
         return data;
@@ -987,7 +970,7 @@ class FormalParameterVisitor extends GJDepthFirst<FormalParamListData, Void>{
    /**
     * f0 -> ( FormalParameterTerm() )*
     */
-    public FormalParamListData visit(FormalParameterTail n, Void argu) throws Exception {
+    public FormalParamListData visit(FormalParameterTail n, Void ignored) throws Exception {
         FormalParamListData types = new FormalParamListData();
         for(int i = 0; i < n.f0.size(); i++){
             types.addAll(n.f0.elementAt(i).accept(this, null));
@@ -999,8 +982,8 @@ class FormalParameterVisitor extends GJDepthFirst<FormalParamListData, Void>{
     * f0 -> ","
     * f1 -> FormalParameter()
     */
-    public FormalParamListData visit(FormalParameterTerm n, Void argu) throws Exception {
-        return n.f1.accept(this, argu);
+    public FormalParamListData visit(FormalParameterTerm n, Void ignored) throws Exception {
+        return n.f1.accept(this, null);
     }
 
 }

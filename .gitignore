@@ -1,2 +1,6 @@
 visitor
 syntaxtree
+.vscode/
+javacc-gen/
+build/
+minijava-jtb.jj
