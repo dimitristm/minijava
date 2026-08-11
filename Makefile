@@ -5,11 +5,11 @@ all: compile
 
 compile: $(BUILD_DIR)/Main.class
 
-$(BUILD_DIR)/Main.class: Main.java minijava.jj
+$(BUILD_DIR)/Main.class: src/Main.java minijava.jj
 	mkdir -p $(GEN_DIR) $(BUILD_DIR)
 	java -jar jtb132di.jar -te minijava.jj
 	java -jar javacc5.jar -OUTPUT_DIRECTORY=$(GEN_DIR) minijava-jtb.jj
-	javac --release 17 -d $(BUILD_DIR) -sourcepath . $(GEN_DIR)/*.java Main.java
+	javac --release 17 -d $(BUILD_DIR) -sourcepath src:. $(GEN_DIR)/*.java $$(find src -name "*.java")
 
 run: compile
 	java -cp $(BUILD_DIR) Main Example.java
