@@ -11,6 +11,5 @@ This will generate code with JTB and JavaCC and compile the code in src/.
 To run, you can use `make run`, which will test the program on the file Example.java.
 
 ## Related
-JavaCC is a parser generator. JTB is used to build a syntax tree for the parser, which we then explore with the
-visitor pattern. The parser is generated from the grammar in minijava.jj
+JavaCC is a parser generator. JTB is used to build a syntax tree. The parser is generated from the grammar in minijava.jj
 [(BNF version here)](http://cgi.di.uoa.gr/~thp06/project_files/minijava-new/minijava.html). 
