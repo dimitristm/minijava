@@ -6,24 +6,24 @@ import visitor.GJNoArguDepthFirst;
 import exceptions.SemanticCheckException;
 import models.ClassAndIdentifier;
 import models.MethodInfo;
+import models.ClassHierarchy;
 
 import java.util.HashMap;
-import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.Deque;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 
 public class TypecheckVisitor extends GJDepthFirst<String, Boolean> {
     // in SymbolTable<ClassAndIdentifier, String> the string represents the type of
     // the field/variable
     private SymbolTable<ClassAndIdentifier, String> variableSymbolTable = new SymbolTable<>();
-    private final Map<ClassAndIdentifier, MethodInfo> methods;
-    private final Map<String, String> classesAndTheirParents;
+    private final ClassHierarchy classHierarchy;
     private String currentClass;
 
-    public TypecheckVisitor(Map<ClassAndIdentifier, MethodInfo> methods, Map<String, String> classesAndTheirParents) {
-        this.methods = methods;
-        this.classesAndTheirParents = classesAndTheirParents;
+    public TypecheckVisitor(ClassHierarchy classHierarchy) {
+        this.classHierarchy = classHierarchy;
     }
 
     /**
@@ -162,7 +162,7 @@ public class TypecheckVisitor extends GJDepthFirst<String, Boolean> {
             if (type != null) {
                 return type;
             }
-            currentClassToCheck = classesAndTheirParents.get(currentClassToCheck);
+            currentClassToCheck = classHierarchy.getParent(currentClassToCheck);
         }
         throw new SemanticCheckException("The variable " + varName + " has not been declared yet");
     }
@@ -354,15 +354,7 @@ public class TypecheckVisitor extends GJDepthFirst<String, Boolean> {
         String methodName = n.f2.accept(this, false);
 
         // make sure the method exists in the class or a parent class
-        String currentClassToCheck = className;
-        MethodInfo methodInfo = methods.get(new ClassAndIdentifier(currentClassToCheck, methodName));
-        while (currentClassToCheck != null) {
-            methodInfo = methods.get(new ClassAndIdentifier(currentClassToCheck, methodName));
-            if (methodInfo != null) {
-                break;
-            }
-            currentClassToCheck = classesAndTheirParents.get(currentClassToCheck);
-        }
+        MethodInfo methodInfo = classHierarchy.getMethod(className, methodName);
         if (methodInfo == null) {
             throw new SemanticCheckException("method " + methodName + " was called on an object " + "(of type "
                     + className + ")" + " that doesn't have that method");
@@ -371,17 +363,17 @@ public class TypecheckVisitor extends GJDepthFirst<String, Boolean> {
         // make sure the expression list matches the methodInfo, ? needed because
         // f.f4.accept returns false if it's not present but we instead need an empty
         // list to represent no falsements
-        LinkedList<String> expressionList = n.f4.present() ? n.f4.accept(new GetExpressionListTypesVisitor(this))
-                : new LinkedList<String>();
+        List<String> expressionList = n.f4.present() ? n.f4.accept(new GetExpressionListTypesVisitor(this))
+                : new ArrayList<String>();
 
-        if (!(expressionList.size() == methodInfo.argumentTypes().size())) {
+        if (!(expressionList.size() == methodInfo.signature().argumentTypes().size())) {
             throw new SemanticCheckException("Incorrect amount of arguments in method call");
         }
         for (int i = 0; i < expressionList.size(); i++) {
-            bothAreCompatibleType(methodInfo.argumentTypes().get(i), expressionList.get(i));
+            bothAreCompatibleType(methodInfo.signature().argumentTypes().get(i), expressionList.get(i));
         }
         // return our return type
-        return methodInfo.returnType();
+        return methodInfo.signature().returnType();
     }
 
     /**
@@ -490,7 +482,7 @@ public class TypecheckVisitor extends GJDepthFirst<String, Boolean> {
     @Override
     public String visit(AllocationExpression n, Boolean ignored) throws Exception {
         String className = n.f1.accept(this, false);
-        if (!classesAndTheirParents.containsKey(className)) {
+        if (!classHierarchy.classExists(className)) {
             throw new SemanticCheckException(
                     "Allocation expression did not contain a declared class, " + className + " is not recognised");
         }
@@ -539,12 +531,12 @@ public class TypecheckVisitor extends GJDepthFirst<String, Boolean> {
             return;
         }
         // check if type2 is derived by type1, if yes, the assignment is correct
-        String ancestorOfType2 = classesAndTheirParents.get(type2);
+        String ancestorOfType2 = classHierarchy.getParent(type2);
         while (ancestorOfType2 != null) {
             if (ancestorOfType2.equals(type1)) {
                 return;
             }
-            ancestorOfType2 = classesAndTheirParents.get(ancestorOfType2);
+            ancestorOfType2 = classHierarchy.getParent(ancestorOfType2);
         }
         throw new SemanticCheckException("Expected that two things would be of the same type");
     }
@@ -673,7 +665,7 @@ class SymbolTable<K, V> {
     }
 }
 
-class GetExpressionListTypesVisitor extends GJNoArguDepthFirst<LinkedList<String>> {
+class GetExpressionListTypesVisitor extends GJNoArguDepthFirst<List<String>> {
     private TypecheckVisitor typeVisitor;
 
     GetExpressionListTypesVisitor(TypecheckVisitor typeVisitor) {
@@ -685,8 +677,8 @@ class GetExpressionListTypesVisitor extends GJNoArguDepthFirst<LinkedList<String
      * f1 -> ExpressionTail()
      */
     @Override
-    public LinkedList<String> visit(ExpressionList n) throws Exception {
-        LinkedList<String> typesOfExpressions = new LinkedList<String>();
+    public List<String> visit(ExpressionList n) throws Exception {
+        List<String> typesOfExpressions = new ArrayList<String>();
         typesOfExpressions.add(n.f0.accept(typeVisitor, false));
         typesOfExpressions.addAll(n.f1.accept(this));
         return typesOfExpressions;
@@ -696,8 +688,8 @@ class GetExpressionListTypesVisitor extends GJNoArguDepthFirst<LinkedList<String
      * f0 -> ( ExpressionTerm() )*
      */
     @Override
-    public LinkedList<String> visit(ExpressionTail n) throws Exception {
-        LinkedList<String> typesOfExpressions = new LinkedList<String>();
+    public List<String> visit(ExpressionTail n) throws Exception {
+        List<String> typesOfExpressions = new ArrayList<String>();
         for (int i = 0; i < n.f0.size(); i++) {
             typesOfExpressions.add(n.f0.elementAt(i).accept(this).get(0));
         }
@@ -709,8 +701,8 @@ class GetExpressionListTypesVisitor extends GJNoArguDepthFirst<LinkedList<String
      * f1 -> Expression()
      */
     @Override
-    public LinkedList<String> visit(ExpressionTerm n) throws Exception {
-        LinkedList<String> type = new LinkedList<String>();
+    public List<String> visit(ExpressionTerm n) throws Exception {
+        List<String> type = new ArrayList<String>();
         type.add(n.f1.accept(typeVisitor, false));
         return type;
     }

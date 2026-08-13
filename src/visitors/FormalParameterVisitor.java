@@ -3,14 +3,14 @@ package visitors;
 import syntaxtree.*;
 import visitor.GJNoArguDepthFirst;
 import java.util.List;
-import java.util.LinkedList;
+import java.util.ArrayList;
 import java.util.Collections;
 
 class FormalParamListData {
     record Parameter(String type, String id) {
     }
 
-    private List<Parameter> parameters = new LinkedList<>();
+    private List<Parameter> parameters = new ArrayList<>();
 
     public List<Parameter> getParameters() {
         return Collections.unmodifiableList(parameters);

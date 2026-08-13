@@ -22,14 +22,12 @@ public class Main {
 
                 DeclarationCollectorVisitor declarations = new DeclarationCollectorVisitor();
                 root.accept(declarations);
-                TypecheckVisitor eval = new TypecheckVisitor(declarations.getMethods(),
-                        declarations.getClassesAndTheirParents());
+                TypecheckVisitor eval = new TypecheckVisitor(declarations.getClassHierarchy());
                 root.accept(eval, false);
                 System.err.println("SUCCESS: Program " + arg + " passed the semantic check.");
 
                 System.out.println("Offsets:");
-                OffsetGeneratorVisitor ofvis = new OffsetGeneratorVisitor(declarations.getMethods(),
-                        declarations.getClassesAndTheirParents());
+                OffsetGeneratorVisitor ofvis = new OffsetGeneratorVisitor(declarations.getClassHierarchy());
                 root.accept(ofvis);
                 ofvis.printOffsets();
 

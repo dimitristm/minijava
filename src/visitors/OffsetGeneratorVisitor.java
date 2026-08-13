@@ -1,46 +1,34 @@
 package visitors;
 
 import syntaxtree.*;
-import models.ClassAndIdentifier;
-import models.MethodInfo;
+import models.ClassHierarchy;
 
-import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.Collections;
+import java.util.ArrayList;
 
 public class OffsetGeneratorVisitor extends StringRepresentationVisitor {
     private static final int POINTER_SIZE = 8;
     private static final int INT_SIZE = 4;
     private static final int BOOLEAN_SIZE = 1;
 
-    public OffsetGeneratorVisitor(Map<ClassAndIdentifier, MethodInfo> methods,
-            Map<String, String> classesAndTheirParents) {
-        this.classesAndTheirParents = classesAndTheirParents;
-        this.methods = methods;
-        storageRequired.put("int", INT_SIZE);
-        storageRequired.put("boolean", BOOLEAN_SIZE);
-        storageRequired.put("int[]", POINTER_SIZE);
-        storageRequired.put("boolean[]", POINTER_SIZE);
+    public OffsetGeneratorVisitor(ClassHierarchy classHierarchy) {
+        this.classHierarchy = classHierarchy;
     }
 
     private LinkedList<ClassOffsets> offsets = new LinkedList<>();
     private String currentClass = null;
-    private Map<String, Integer> storageRequired = new HashMap<>();
+    private ClassHierarchy classHierarchy;
 
-    private Map<String, String> classesAndTheirParents = new HashMap<>();
-    private Map<ClassAndIdentifier, MethodInfo> methods = new HashMap<>();
-
-    private Integer getStorageRequired(String type, boolean isFunction) {
-        if (isFunction) {
+    private Integer getFieldStorageRequired(String type) {
+        if (type.equals("int")) return INT_SIZE;
+        else if (type.equals("boolean")) return BOOLEAN_SIZE;
+        else if (type.equals("int[]")) return POINTER_SIZE;
+        else if (type.equals("boolean[]")) return POINTER_SIZE;
+        else { // it is a class type, so a pointer
             return POINTER_SIZE;
-        } // it is a pointer
-        Integer storage = storageRequired.get(type);
-        if (storage == null) {
-            return POINTER_SIZE;
-        } // it is a class type, so a pointer
-        return storage;
+        }
     }
 
     public void printOffsets() {
@@ -62,7 +50,7 @@ public class OffsetGeneratorVisitor extends StringRepresentationVisitor {
     @Override
     public String visit(VarDeclaration n) throws Exception {
         String type = n.f0.accept(this);
-        offsets.getLast().addMember(n.f1.accept(this), getStorageRequired(type, false), false);
+        offsets.getLast().addField(n.f1.accept(this), getFieldStorageRequired(type));
         return null;
     }
 
@@ -111,22 +99,9 @@ public class OffsetGeneratorVisitor extends StringRepresentationVisitor {
      */
     @Override
     public String visit(MethodDeclaration n) throws Exception {
-        String parentClass = classesAndTheirParents.get(currentClass);
         String methodName = n.f2.accept(this);
-        if (parentClass == null) {
-            offsets.getLast().addMember(methodName, getStorageRequired(null, true), true);
-        } else {
-            boolean methodIsBeingOverriden = false;
-            while (parentClass != null) {
-                if (methods.get(new ClassAndIdentifier(parentClass, methodName)) != null) {
-                    methodIsBeingOverriden = true;
-                    break;
-                }
-                parentClass = classesAndTheirParents.get(parentClass);
-            }
-            if (!methodIsBeingOverriden) {
-                offsets.getLast().addMember(methodName, getStorageRequired(null, true), true);
-            }
+        if (!classHierarchy.getMethod(currentClass, methodName).isOverride()) {
+            offsets.getLast().addMethod(methodName, POINTER_SIZE);
         }
         return null;
     }
@@ -147,7 +122,7 @@ class ClassOffsets {
     }
 
     private String className;
-    private List<MemberAndOffset> offsets = new LinkedList<>();
+    private List<MemberAndOffset> offsets = new ArrayList<>();
     private int nextFieldOffsetValue;
     private int nextMethodOffsetValue;
 
@@ -167,14 +142,14 @@ class ClassOffsets {
         return this.nextMethodOffsetValue;
     }
 
-    public void addMember(String memberName, int storageRequired, boolean isMethod) {
-        if (isMethod) {
-            offsets.add(new MemberAndOffset(memberName, nextMethodOffsetValue));
-            nextMethodOffsetValue += storageRequired;
-        } else {
-            offsets.add(new MemberAndOffset(memberName, nextFieldOffsetValue));
-            nextFieldOffsetValue += storageRequired;
-        }
+    public void addMethod(String methodName, int storageRequired) {
+        offsets.add(new MemberAndOffset(methodName, nextMethodOffsetValue));
+        nextMethodOffsetValue += storageRequired;
+    }
+
+    public void addField(String fieldName, int storageRequired) {
+        offsets.add(new MemberAndOffset(fieldName, nextFieldOffsetValue));
+        nextFieldOffsetValue += storageRequired;
     }
 
     public void printOffsets() {
