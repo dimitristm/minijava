@@ -5,40 +5,40 @@ class Main {
 }
 
 class A extends Main {
-    int myInt;
-    boolean myBool;
-    int[] myArray;
+    int i1;
+    boolean b1;
+    int[] iarr;
 
     public int init(int size) {
-        myInt = size;
-        myBool = true;
-        myArray = new int[size];
+        i1 = size;
+        b1 = true;
+        iarr = new int[size];
         return 0;
     }
 
     public int getInt() {
-        return myInt;
+        return i1;
     }
 }
 
 class B extends A {
-    int anotherInt;
+    int i2;
 
     public int runTest(int size) {
         int dummy;
-        int i;
+        int i3;
         dummy = this.init(size);
-        anotherInt = 0;
-        i = 0;
+        i2 = 0;
+        i3 = 0;
 
-        while (i < (myArray.length)) {
-            myArray[i] = i * 2;
-            anotherInt = anotherInt + (myArray[i]);
-            i = i + 1;
+        while (i3 < (iarr.length)) {
+            iarr[i3] = i3 * 2;
+            i2 = i2 + (iarr[i3]);
+            i3 = i3 + 1;
         }
 
-        if (myBool && (0 < myInt)) {
-            System.out.println(anotherInt);
+        if (b1 && (0 < i1)) {
+            System.out.println(i2);
         } else {
             System.out.println(0);
         }

@@ -3,7 +3,8 @@ class Main {
         System.out.println(new Test4().run());
     }
 }
-class Test4 extends UndeclaredClass { 
+
+class Test4 extends UndeclaredClass {
     public int run() {
         return 0;
     }

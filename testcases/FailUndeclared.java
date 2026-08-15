@@ -3,9 +3,10 @@ class Main {
         System.out.println(new Test2().run());
     }
 }
+
 class Test2 {
     public int run() {
-        x = 5; 
+        x = 5;
         return x;
     }
 }

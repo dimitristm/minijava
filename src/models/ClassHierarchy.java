@@ -69,10 +69,11 @@ public class ClassHierarchy {
             while (currentClassToCheckForOverload != null) {
                 Map<String, MethodInfo> inheritedMethods = classes.get(currentClassToCheckForOverload).methods();
                 MethodInfo inheritedMethodWithSameName = inheritedMethods.get(methodName);
-                if (inheritedMethodWithSameName != null){
+                if (inheritedMethodWithSameName != null) {
                     if (!inheritedMethodWithSameName.signature().equals(signature)) {
                         throw new SemanticCheckException(
-                                "In class " + className + ": Tried to overload method " + methodName + " inherited from "
+                                "In class " + className + ": Tried to overload method " + methodName
+                                        + " inherited from "
                                         + currentClassToCheckForOverload + ". Minijava does not support overloads.");
                     }
                     isOverride = true;
